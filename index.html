@@ -3,221 +3,326 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modbus Master Analyzer (Standalone)</title>
+    <title>Modbus Expert | Consola Profesional</title>
     <style>
         :root {
-            --bg: #020617; --card: #0f172a; --primary: #38bdf8;
-            --text: #f8fafc; --muted: #64748b; --error: #ef4444; --success: #22c55e;
-            --border: #1e293b; --accent: #f59e0b; --code: #10b981;
+            --bg: #0a0a0c; --side: #121214; --panel: #18181b;
+            --primary: #3b82f6; --primary-hover: #2563eb;
+            --text: #e4e4e7; --muted: #71717a; --border: #27272a;
+            --success: #10b981; --error: #ef4444; --warning: #f59e0b;
         }
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
-            font-family: 'Segoe UI', system-ui, sans-serif; 
-            background: var(--bg); color: var(--text); 
-            margin: 0; padding: 15px; overflow: hidden; height: 100vh;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg); color: var(--text);
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
         }
-        .container { display: flex; gap: 15px; height: 100%; }
-        .sidebar { flex: 0 0 380px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
-        .panel { background: var(--card); border-radius: 12px; padding: 15px; border: 1px solid var(--border); }
-        .main-content { flex: 1; display: flex; flex-direction: column; gap: 15px; overflow: hidden; }
-        h3 { margin: 0 0 12px 0; color: var(--primary); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
-        .field-group { margin-bottom: 8px; }
-        label { display: block; font-size: 0.65rem; color: var(--muted); margin-bottom: 2px; }
+
+        /* Toolbar Superior */
+        .toolbar { 
+            height: 48px; background: var(--side); border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; padding: 0 20px; justify-content: space-between;
+        }
+        .logo { font-weight: 800; font-size: 0.9rem; letter-spacing: 0.5px; color: var(--primary); display: flex; align-items: center; gap: 10px; }
+        .conn-status { font-size: 0.7rem; display: flex; align-items: center; gap: 6px; color: var(--muted); }
+        .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--error); }
+        .dot.active { background: var(--success); box-shadow: 0 0 8px var(--success); }
+
+        /* Main Layout */
+        .app-container { display: flex; flex: 1; overflow: hidden; }
+        
+        /* Sidebar Izquierda (Estaciones) */
+        .sidebar { width: 260px; background: var(--side); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .section-title { padding: 15px 20px 10px; font-size: 0.65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+        .station-list { flex: 1; overflow-y: auto; padding: 0 10px; }
+        .station-item { 
+            padding: 10px 12px; border-radius: 6px; cursor: pointer; margin-bottom: 4px;
+            transition: 0.2s; border: 1px solid transparent;
+        }
+        .station-item:hover { background: #1e1e22; }
+        .station-item.active { background: #1e1e22; border-color: var(--primary); }
+        .station-name { font-size: 0.85rem; font-weight: 600; display: block; }
+        .station-ip { font-size: 0.7rem; color: var(--muted); }
+
+        /* Panel Central (Parámetros) */
+        .editor-panel { width: 380px; background: var(--bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; padding: 20px; }
+        .group { margin-bottom: 20px; }
+        .group-title { font-size: 0.75rem; font-weight: 600; margin-bottom: 12px; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .field { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 0.65rem; color: var(--muted); font-weight: 600; text-transform: uppercase; }
         input, select, textarea { 
-            width: 100%; background: #020617; border: 1px solid var(--border); 
-            color: white; padding: 8px; border-radius: 4px; font-size: 0.85rem; font-family: monospace;
+            background: #121214; border: 1px solid var(--border); color: white; padding: 8px 12px;
+            border-radius: 4px; font-size: 0.85rem; outline: none; transition: border 0.2s;
         }
-        .btn { cursor: pointer; border: none; padding: 8px; border-radius: 4px; font-weight: bold; width: 100%; font-size: 0.8rem; transition: 0.2s; }
-        .btn-primary { background: var(--primary); color: #020617; }
-        .btn-accent { background: var(--accent); color: #020617; }
-        .btn-danger { background: #334155; color: var(--text); }
-        .btn:hover { filter: brightness(1.1); }
+        input:focus { border-color: var(--primary); }
+        textarea { font-family: monospace; resize: none; }
         
-        .log-view { 
-            flex: 1; background: #000; border-radius: 8px; padding: 10px; 
-            font-family: 'Fira Code', 'Consolas', monospace; font-size: 0.75rem; 
-            overflow-y: auto; color: #cbd5e1; border: 1px solid var(--border);
+        .btn { 
+            padding: 10px; border-radius: 4px; border: none; cursor: pointer; font-weight: 700; 
+            font-size: 0.8rem; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;
         }
-        .log-line { border-bottom: 1px solid #111; padding: 6px 0; }
-        .time { color: #475569; font-size: 0.7rem; }
-        .ERROR { color: var(--error); }
-        .INFO { color: var(--success); }
-        .DEBUG { color: var(--primary); }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+        .btn-ghost:hover { background: #1e1e22; color: white; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Monitor Derecho */
+        .monitor-panel { flex: 1; display: flex; flex-direction: column; background: #050505; }
+        .monitor-header { height: 40px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 15px; justify-content: space-between; }
+        .log-view { flex: 1; overflow-y: auto; padding: 15px; font-family: 'JetBrains Mono', 'Menlo', monospace; font-size: 0.75rem; line-height: 1.5; }
         
-        .parse-box { background: #020617; border: 1px solid #1e293b; padding: 10px; margin-top: 5px; border-radius: 4px; }
-        .hex-raw { color: #94a3b8; font-size: 0.7rem; word-break: break-all; margin-bottom: 5px; display: block; background: #111; padding: 4px; border-radius: 2px; }
-        .float-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px; }
-        .float-item { background: #1e293b; padding: 5px; border-radius: 3px; border-left: 3px solid var(--code); }
-        .float-label { font-size: 0.6rem; color: var(--muted); display: block; }
-        .float-val { color: var(--text); font-weight: bold; font-size: 0.85rem; }
+        /* Log Entries */
+        .entry { margin-bottom: 15px; border-left: 2px solid #27272a; padding-left: 12px; animation: slideIn 0.2s ease-out; }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+        .entry-header { display: flex; gap: 10px; align-items: center; margin-bottom: 5px; }
+        .lvl { font-weight: 800; font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; }
+        .lvl-INFO { background: #064e3b; color: #10b981; }
+        .lvl-DEBUG { background: #1e1b4b; color: #818cf8; }
+        .lvl-ERROR { background: #450a0a; color: #f87171; }
+        .ts { color: #52525b; }
+        .dur { color: var(--warning); font-weight: bold; }
+        
+        .hex-box { background: #0f0f11; padding: 8px; border-radius: 4px; border: 1px solid #1e1e22; margin: 5px 0; color: #94a3b8; word-break: break-all; }
+        .data-viewer { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 8px; }
+        .val-card { background: #121214; border: 1px solid var(--border); padding: 8px; border-radius: 4px; }
+        .val-label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; display: block; }
+        .val-num { font-size: 1rem; font-weight: 700; color: var(--text); }
+
+        .loader { width: 12px; height: 12px; border: 2px solid #fff; border-bottom-color: transparent; border-radius: 50%; display: inline-block; animation: rotation 1s linear infinite; }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-<div class="container">
+<div class="toolbar">
+    <div class="logo">MODBUS MASTER EXPERT <span style="font-weight:300; color:var(--muted)">v2.0</span></div>
+    <div class="conn-status">
+        <div id="dot" class="dot"></div>
+        <span id="wsLabel">SIN CONEXIÓN</span>
+    </div>
+</div>
+
+<div class="app-container">
     <div class="sidebar">
-        <!-- Inyector de Tramas RAW -->
-        <div class="panel">
-            <h3>Custom Hex Injector</h3>
-            <div class="field-group"><label>Target Device IP</label><input type="text" id="rawIP" value="10.50.184.208"></div>
-            <div class="field-group">
-                <label>Hex Frame (Paste frame here)</label>
-                <textarea id="rawHex" rows="3" placeholder="e.g. 000100000006020327100002" oninput="liveDecode(this.value)"></textarea>
-            </div>
-            <button class="btn btn-accent" onclick="sendRaw()">EXECUTE FRAME ➜</button>
-            <div id="livePreview" style="margin-top:10px;"></div>
-        </div>
-
-        <div class="panel">
-            <h3>Standard Request</h3>
-            <div style="display: flex; gap: 8px;">
-                <div class="field-group" style="flex: 2;"><label>Start Address</label><input type="number" id="mAddr" value="10000"></div>
-                <div class="field-group" style="flex: 1;"><label>Qty</label><input type="number" id="mQty" value="2"></div>
-            </div>
-            <button class="btn btn-primary" onclick="manualRead()">READ REGISTERS</button>
-        </div>
-
-        <div class="panel" style="flex:1">
-            <h3>Saved Stations</h3>
-            <div id="stationList"></div>
+        <div class="section-title">Estaciones Guardadas</div>
+        <div id="stationList" class="station-list"></div>
+        <div style="padding: 15px;">
+            <button class="btn btn-ghost" style="width:100%" onclick="saveConfig()">Guardar YAML</button>
         </div>
     </div>
 
-    <div class="main-content">
-        <div class="panel" style="flex: 1; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3>Traffic Monitor & Protocol Decoder</h3>
-                <button class="btn btn-danger" style="width: auto; padding: 4px 12px;" onclick="clearLogs()">Clear Console</button>
-            </div>
-            <div id="logView" class="log-view"></div>
-            <div style="margin-top:10px; font-size:0.7rem; color:var(--muted); display:flex; justify-content:space-between; align-items:center;">
-                <span id="wsStatus">● WS Disconnected</span>
-                <span>Float32: CDAB (Swapped) | ABCD (Big) | DCBA (Little)</span>
+    <div class="editor-panel">
+        <div class="group">
+            <div class="group-title">PARÁMETROS DE CONEXIÓN</div>
+            <div class="form-grid">
+                <div class="field"><label>Dirección IP</label><input type="text" id="ip" value="10.50.184.208"></div>
+                <div class="field"><label>Puerto TCP</label><input type="number" id="port" value="502"></div>
+                <div class="field" style="grid-column: span 2;"><label>ID del Esclavo (Unit ID)</label><input type="number" id="sid" value="2"></div>
             </div>
         </div>
+
+        <div class="group">
+            <div class="group-title">PETICIÓN DE REGISTROS</div>
+            <div class="form-grid">
+                <div class="field" style="grid-column: span 2;">
+                    <label>Función Modbus</label>
+                    <select id="func">
+                        <option value="3">03 Read Holding Registers</option>
+                        <option value="4">04 Read Input Registers</option>
+                    </select>
+                </div>
+                <div class="field"><label>Dirección Inicio</label><input type="number" id="addr" value="10000"></div>
+                <div class="field"><label>Cantidad (Reg)</label><input type="number" id="qty" value="2"></div>
+            </div>
+        </div>
+
+        <div class="group">
+            <div class="group-title">INTERPRETACIÓN</div>
+            <div class="form-grid">
+                <div class="field" style="grid-column: span 2;">
+                    <label>Formato de Datos</label>
+                    <select id="dtype">
+                        <option value="float32">Float 32 (IEEE 754)</option>
+                        <option value="int16">Entero 16 bits</option>
+                    </select>
+                </div>
+                <div class="field" style="grid-column: span 2;">
+                    <label>Orden de Bytes (Endianness)</label>
+                    <select id="endian">
+                        <option value="dcba">Little Endian / DCBA (Swapped)</option>
+                        <option value="cdab">Word Swap / CDAB</option>
+                        <option value="abcd">Big Endian / ABCD</option>
+                        <option value="badc">Byte Swap / BADC</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <button id="readBtn" class="btn btn-primary" onclick="doRead()">
+            <span>REALIZAR LECTURA</span>
+            <div id="loader" class="loader" style="display:none"></div>
+        </button>
+
+        <div class="group" style="margin-top:25px;">
+            <div class="group-title">INYECCIÓN RAW (HEX)</div>
+            <textarea id="rawHex" rows="3" placeholder="Ej: 000100000006020327100002"></textarea>
+            <button class="btn btn-ghost" style="width:100%; margin-top:8px;" onclick="sendRaw()">ENVIAR TRAMA MANUAL</button>
+        </div>
+    </div>
+
+    <div class="monitor-panel">
+        <div class="monitor-header">
+            <div style="font-size:0.75rem; font-weight:700; color:var(--muted)">MONITOR DE TRÁFICO</div>
+            <button class="btn btn-ghost" style="padding:4px 10px; font-size:0.65rem;" onclick="clearLogs()">Limpiar Consola</button>
+        </div>
+        <div id="logView" class="log-view"></div>
     </div>
 </div>
 
 <script>
+    let globalConfig = { stations: [] };
+    let isReading = false;
+
     async function init() {
-        const res = await fetch('/api/config');
-        const cfg = await res.json();
-        document.getElementById('stationList').innerHTML = cfg.stations.map((st, i) => `
-            <div style="margin-bottom:8px; display:flex; gap:5px; align-items:center; background:#1e293b; padding:8px; border-radius:6px;">
-                <div style="flex:1"><span style="font-size:0.75rem; font-weight:bold;">${st.name}</span><br><span style="font-size:0.65rem; color:var(--muted)">${st.ip} (ID:${st.id})</span></div>
-                <button class="btn btn-primary" style="width:30px" onclick="setRawTarget('${st.ip}', ${st.id})">➜</button>
-            </div>
-        `).join('');
-        setupWebSocket();
+        try {
+            const res = await fetch('/api/config');
+            globalConfig = await res.json();
+            renderStations();
+        } catch(e) {}
+        setupWS();
     }
 
-    function setRawTarget(ip, id) {
-        document.getElementById('rawIP').value = ip;
-        // Auto-generate a basic read request for that ID
-        const trans = "0001";
-        const proto = "0000";
-        const len = "0006";
-        const unit = id.toString(16).padStart(2, '0');
-        const func = "03";
-        const addr = "2710"; // 10000
-        const qty = "0002";
-        document.getElementById('rawHex').value = trans + proto + len + unit + func + addr + qty;
-        liveDecode(document.getElementById('rawHex').value);
+    function renderStations() {
+        const container = document.getElementById('stationList');
+        container.innerHTML = globalConfig.stations.map((st, i) => `
+            <div class="station-item" onclick="loadStation(${i})">
+                <span class="station-name">${st.name}</span>
+                <span class="station-ip">${st.ip} (ID: ${st.id})</span>
+            </div>
+        `).join('');
+    }
+
+    function loadStation(i) {
+        const st = globalConfig.stations[i];
+        document.getElementById('ip').value = st.ip;
+        document.getElementById('sid').value = st.id;
+        document.getElementById('addr').value = st.start_addr || 10000;
+        document.getElementById('qty').value = st.quantity || 2;
+        document.getElementById('endian').value = st.endian || 'dcba';
+        
+        document.querySelectorAll('.station-item').forEach((el, idx) => {
+            el.classList.toggle('active', idx === i);
+        });
+    }
+
+    async function doRead() {
+        if (isReading) return;
+        setLoading(true);
+        const payload = {
+            ip: document.getElementById('ip').value,
+            port: parseInt(document.getElementById('port').value),
+            id: parseInt(document.getElementById('sid').value),
+            addr: parseInt(document.getElementById('addr').value),
+            count: parseInt(document.getElementById('qty').value),
+            endian: document.getElementById('endian').value
+        };
+        try {
+            await fetch('/api/test', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+        } catch(e) {}
+        setLoading(false);
+    }
+
+    function setLoading(val) {
+        isReading = val;
+        document.getElementById('loader').style.display = val ? 'inline-block' : 'none';
+        document.getElementById('readBtn').disabled = val;
     }
 
     async function sendRaw() {
         const hex = document.getElementById('rawHex').value.replace(/\s/g, '');
-        const ip = document.getElementById('rawIP').value;
-        await fetch('/api/raw', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ip, port:502, hex})
+        if (!hex) return;
+        await fetch('/api/raw', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({ ip: document.getElementById('ip').value, port: parseInt(document.getElementById('port').value), hex: hex }) 
         });
     }
 
-    async function manualRead() {
-        const ip = document.getElementById('rawIP').value;
-        const addr = parseInt(document.getElementById('mAddr').value);
-        const qty = parseInt(document.getElementById('mQty').value);
-        await fetch('/api/test', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ip, port:502, id:2, addr, count:qty, endian:'little'})
-        });
+    async function saveConfig() {
+        await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(globalConfig) });
+        alert('Configuración YAML actualizada correctamente.');
     }
 
-    function liveDecode(hex) {
-        const preview = document.getElementById('livePreview');
-        if (hex.length < 4) { preview.innerHTML = ''; return; }
-        preview.innerHTML = `<div class="parse-box" style="font-size:0.7rem; border-color:var(--accent);">
-            <div style="color:var(--accent); margin-bottom:5px; font-weight:bold;">Offline Decoder:</div>
-            ${decodeModbus(hex.replace(/\s/g, ''))}
-        </div>`;
-    }
-
-    function setupWebSocket() {
+    function setupWS() {
         const ws = new WebSocket(`ws://${window.location.host}/ws`);
-        ws.onopen = () => { document.getElementById('wsStatus').innerText = '● WS Connected'; document.getElementById('wsStatus').style.color='#22c55e'; };
-        ws.onclose = () => { document.getElementById('wsStatus').innerText = '● WS Reconnecting...'; document.getElementById('wsStatus').style.color='#ef4444'; setTimeout(setupWebSocket, 2000); };
+        const dot = document.getElementById('dot');
+        const label = document.getElementById('wsLabel');
+        ws.onopen = () => { dot.classList.add('active'); label.innerText = 'CONECTADO'; };
+        ws.onclose = () => { dot.classList.remove('active'); label.innerText = 'DESCONECTADO'; setTimeout(setupWS, 2000); };
         ws.onmessage = (e) => addLog(JSON.parse(e.data));
     }
 
     function addLog(l) {
         const view = document.getElementById('logView');
-        const entry = document.createElement('div');
-        entry.className = 'log-line';
-        entry.innerHTML = `
-            <div style="display:flex; justify-content:space-between">
-                <div><span class="time">[${l.timestamp}]</span> <span class="${l.level}">${l.level}:</span> ${l.message}</div>
+        const div = document.createElement('div');
+        div.className = 'entry';
+        
+        let decodeContent = '';
+        if (l.raw_hex) {
+            decodeContent = `
+                <div class="hex-box">${l.raw_hex.match(/.{1,2}/g).join(' ')}</div>
+                <div class="data-viewer">${decodeData(l.raw_hex)}</div>
+            `;
+        }
+
+        div.innerHTML = `
+            <div class="entry-header">
+                <span class="lvl lvl-${l.level}">${l.level}</span>
+                <span class="ts">${l.timestamp}</span>
+                <span style="font-weight:600">${l.message}</span>
+                ${l.duration ? `<span class="dur">${l.duration}</span>` : ''}
             </div>
-            ${l.raw_hex ? `
-                <div class="parse-box">
-                    <span class="hex-raw">RAW HEX: ${l.raw_hex}</span>
-                    ${decodeModbus(l.raw_hex)}
-                </div>
-            ` : ''}
+            ${decodeContent}
         `;
-        view.appendChild(entry);
+        view.appendChild(div);
         view.scrollTop = view.scrollHeight;
     }
 
-    function decodeModbus(hex) {
-        if (hex.length < 14) return `<span class="ERROR">Frame too short</span>`;
+    function decodeData(hex) {
+        if (hex.length < 18) return '';
         const unit = hex.substring(12,14);
         const func = hex.substring(14,16);
-        let res = `<div><b>Unit:</b> ${unit} | <b>Func:</b> ${func}</div>`;
+        const data = hex.substring(18);
         
-        if (func === "83") {
-            return res + `<div class="ERROR">MODBUS EXCEPTION: ${hex.substring(16,18)}</div>`;
-        }
-        
-        if (hex.length >= 18) {
-            const data = hex.substring(18);
-            if (data.length === 8) {
-                const b = [];
-                for(let i=0; i<8; i+=2) b.push(parseInt(data.substr(i,2), 16));
-                const cdab = hexToFloat((b[2] << 24) | (b[3] << 16) | (b[0] << 8) | b[1]);
-                const abcd = hexToFloat((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]);
-                const dcba = hexToFloat((b[3] << 24) | (b[2] << 16) | (b[1] << 8) | b[0]);
-                res += `<div class="float-grid">
-                    <div class="float-item"><span class="float-label">CDAB (Swapped)</span><span class="float-val">${cdab.toFixed(5)}</span></div>
-                    <div class="float-item"><span class="float-label">ABCD (Big)</span><span class="float-val">${abcd.toFixed(5)}</span></div>
-                    <div class="float-item"><span class="float-label">DCBA (Little)</span><span class="float-val">${dcba.toFixed(5)}</span></div>
-                </div>`;
-            } else {
-                res += `<div style="color:var(--code); margin-top:5px; word-break:break-all;"><b>Data:</b> ${data}</div>`;
-            }
+        let res = `<div class="val-card"><span class="val-label">ID / Función</span><span class="val-num">${unit} / ${func}</span></div>`;
+
+        if (data.length === 8) {
+            const b = []; for(let i=0; i<8; i+=2) b.push(parseInt(data.substr(i,2), 16));
+            const endian = document.getElementById('endian').value;
+            let val = 0;
+            
+            // Lógica de decodificación IEEE 754
+            if (endian === 'dcba') val = hexToFloat((b[3] << 24) | (b[2] << 16) | (b[1] << 8) | b[0]);
+            else if (endian === 'cdab') val = hexToFloat((b[2] << 24) | (b[3] << 16) | (b[0] << 8) | b[1]);
+            else if (endian === 'badc') val = hexToFloat((b[1] << 24) | (b[0] << 16) | (b[3] << 8) | b[2]);
+            else val = hexToFloat((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]);
+
+            res += `<div class="val-card" style="border-left-color:var(--success)"><span class="val-label">Float 32 (${endian.toUpperCase()})</span><span class="val-num">${val.toFixed(5)}</span></div>`;
+        } else if (data.length > 0) {
+            res += `<div class="val-card" style="grid-column: span 2"><span class="val-label">Bytes de Datos (RAW)</span><span class="val-num" style="font-size:0.7rem">${data}</span></div>`;
         }
         return res;
     }
 
     function hexToFloat(hexInt) {
         const buf = new ArrayBuffer(4);
-        (new DataView(buf)).setUint32(0, hexInt, false);
+        (new DataView(buf)).setUint32(0, hexInt >>> 0, false);
         return (new DataView(buf)).getFloat32(0, false);
     }
 
-    function clearLogs() { document.getElementById('logView').innerHTML = '<div class="log-line" style="color:var(--muted)">Console cleared.</div>'; }
+    function clearLogs() { document.getElementById('logView').innerHTML = ''; }
     init();
 </script>
 </body>

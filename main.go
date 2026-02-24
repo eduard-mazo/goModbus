@@ -25,9 +25,9 @@ type StationConfig struct {
 	ID           byte       `yaml:"id" json:"id"`
 	Name         string     `yaml:"name" json:"name"`
 	Endianness   Endianness `yaml:"endian" json:"endian"`
-	TotalRecords int        `yaml:"total_records" json:"total_records"`
-	PointerAddr  uint16     `yaml:"pointer_addr" json:"pointer_addr"`
-	DataAddr     uint16     `yaml:"data_addr" json:"data_addr"`
+	DataType     string     `yaml:"data_type" json:"data_type"`
+	StartAddr    uint16     `yaml:"start_addr" json:"start_addr"`
+	Quantity     uint16     `yaml:"quantity" json:"quantity"`
 }
 
 var (
@@ -103,18 +103,18 @@ func main() {
 
 		api.POST("/test", func(c *gin.Context) {
 			var req struct {
-				IP         string     `json:"ip"`
-				Port       int        `json:"port"`
-				ID         byte       `json:"id"`
-				Endianness Endianness `json:"endian"`
-				Addr       uint16     `json:"addr"`
-				Count      uint16     `json:"count"`
+				IP     string     `json:"ip"`
+				Port   int        `json:"port"`
+				ID     byte       `json:"id"`
+				Endian Endianness `json:"endian"`
+				Addr   uint16     `json:"addr"`
+				Count  uint16     `json:"count"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				c.JSON(400, gin.H{"error": err.Error()})
 				return
 			}
-			client := NewModbusClient(req.IP, req.Port, req.ID, req.Endianness)
+			client := NewModbusClient(req.IP, req.Port, req.ID, req.Endian)
 			if err := client.Connect(); err != nil {
 				c.JSON(500, gin.H{"error": err.Error()})
 				return
@@ -140,34 +140,33 @@ func main() {
 			}
 			rawBytes, err := hex.DecodeString(req.Hex)
 			if err != nil {
-				c.JSON(400, gin.H{"error": "Invalid HEX string"})
+				c.JSON(400, gin.H{"error": "Invalid HEX"})
 				return
 			}
-			address := fmt.Sprintf("%s:%d", req.IP, req.Port)
-			conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", req.IP, req.Port), 5*time.Second)
 			if err != nil {
 				c.JSON(500, gin.H{"error": err.Error()})
 				return
 			}
 			defer conn.Close()
-			broadcastLog("DEBUG", "Manual HEX Sent", rawBytes)
-			_, err = conn.Write(rawBytes)
-			if err != nil {
-				c.JSON(500, gin.H{"error": err.Error()})
-				return
-			}
+			
+			start := time.Now()
+			broadcastLog("DEBUG", "Manual HEX Dispatched", rawBytes, 0)
+			conn.Write(rawBytes)
 			buf := make([]byte, 1024)
 			n, err := conn.Read(buf)
+			elapsed := time.Since(start)
+			
 			if err != nil {
 				c.JSON(500, gin.H{"error": err.Error()})
 				return
 			}
-			broadcastLog("DEBUG", "Manual HEX Received", buf[:n])
+			broadcastLog("INFO", "Manual HEX Response", buf[:n], elapsed)
 			c.JSON(200, gin.H{"raw": hex.EncodeToString(buf[:n])})
 		})
 	}
 
-	fmt.Println("🚀 Server running at http://localhost:8080")
+	fmt.Println("🚀 UI Server: http://localhost:8080")
 	r.Run(":8080")
 }
 
@@ -176,7 +175,7 @@ func loadConfig(filename string) (*Config, error) {
 	defer configMu.RUnlock()
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, err
+		return &Config{Stations: []StationConfig{}}, nil
 	}
 	var config Config
 	err = yaml.Unmarshal(data, &config)
