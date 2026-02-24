@@ -1,0 +1,17 @@
+stations:
+  - ip: "10.155.150.201"
+    port: 502
+    id: 10
+    name: "Estación_1"
+    endian: "little"
+    total_records: 840
+    pointer_addr: 10000
+    data_addr: 700
+  - ip: "10.50.184.208"
+    port: 502
+    id: 2
+    name: "Estación_2"
+    endian: "big"
+    total_records: 840
+    pointer_addr: 10000
+    data_addr: 700
