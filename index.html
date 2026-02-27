@@ -3,326 +3,262 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modbus Expert | Consola Profesional</title>
+    <title>ROC Master Expert | Dashboard Reactivo</title>
     <style>
         :root {
-            --bg: #0a0a0c; --side: #121214; --panel: #18181b;
-            --primary: #3b82f6; --primary-hover: #2563eb;
-            --text: #e4e4e7; --muted: #71717a; --border: #27272a;
-            --success: #10b981; --error: #ef4444; --warning: #f59e0b;
+            --bg: #f8fafc; --panel: #ffffff; --primary: #3b82f6;
+            --text: #1e293b; --muted: #64748b; --border: #e2e8f0;
+            --success: #10b981; --error: #ef4444; --accent: #f59e0b;
+            /* Pastel Palette */
+            --p-blue: #dbeafe; --p-green: #dcfce7; --p-red: #fee2e2;
+            --p-yellow: #fef9c3; --p-purple: #f3e8ff;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg); color: var(--text);
-            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
-        }
-
-        /* Toolbar Superior */
-        .toolbar { 
-            height: 48px; background: var(--side); border-bottom: 1px solid var(--border);
-            display: flex; align-items: center; padding: 0 20px; justify-content: space-between;
-        }
-        .logo { font-weight: 800; font-size: 0.9rem; letter-spacing: 0.5px; color: var(--primary); display: flex; align-items: center; gap: 10px; }
-        .conn-status { font-size: 0.7rem; display: flex; align-items: center; gap: 6px; color: var(--muted); }
-        .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--error); }
-        .dot.active { background: var(--success); box-shadow: 0 0 8px var(--success); }
-
-        /* Main Layout */
-        .app-container { display: flex; flex: 1; overflow: hidden; }
+        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { background: var(--bg); color: var(--text); margin: 0; padding: 20px; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
         
-        /* Sidebar Izquierda (Estaciones) */
-        .sidebar { width: 260px; background: var(--side); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-        .section-title { padding: 15px 20px 10px; font-size: 0.65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
-        .station-list { flex: 1; overflow-y: auto; padding: 0 10px; }
-        .station-item { 
-            padding: 10px 12px; border-radius: 6px; cursor: pointer; margin-bottom: 4px;
-            transition: 0.2s; border: 1px solid transparent;
-        }
-        .station-item:hover { background: #1e1e22; }
-        .station-item.active { background: #1e1e22; border-color: var(--primary); }
-        .station-name { font-size: 0.85rem; font-weight: 600; display: block; }
-        .station-ip { font-size: 0.7rem; color: var(--muted); }
-
-        /* Panel Central (Parámetros) */
-        .editor-panel { width: 380px; background: var(--bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; padding: 20px; }
-        .group { margin-bottom: 20px; }
-        .group-title { font-size: 0.75rem; font-weight: 600; margin-bottom: 12px; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .container { display: flex; gap: 20px; flex: 1; overflow: hidden; }
+        
+        .sidebar { flex: 0 0 400px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
+        .main { flex: 1; display: flex; flex-direction: column; gap: 15px; overflow: hidden; }
+        
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        h3 { margin: 0 0 15px 0; font-size: 0.8rem; text-transform: uppercase; color: var(--primary); letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
+        
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .field { display: flex; flex-direction: column; gap: 5px; }
-        label { font-size: 0.65rem; color: var(--muted); font-weight: 600; text-transform: uppercase; }
-        input, select, textarea { 
-            background: #121214; border: 1px solid var(--border); color: white; padding: 8px 12px;
-            border-radius: 4px; font-size: 0.85rem; outline: none; transition: border 0.2s;
+        .field { margin-bottom: 10px; }
+        label { display: block; font-size: 0.65rem; color: var(--muted); margin-bottom: 4px; font-weight: 700; text-transform: uppercase; }
+        input, select { 
+            width: 100%; background: #f1f5f9; border: 1px solid var(--border); color: var(--text); 
+            padding: 10px; border-radius: 10px; font-size: 0.85rem; outline: none; transition: 0.2s;
         }
-        input:focus { border-color: var(--primary); }
-        textarea { font-family: monospace; resize: none; }
+        input:focus { border-color: var(--primary); background: #fff; }
         
-        .btn { 
-            padding: 10px; border-radius: 4px; border: none; cursor: pointer; font-weight: 700; 
-            font-size: 0.8rem; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
+        .btn { cursor: pointer; border: none; padding: 12px; border-radius: 12px; font-weight: bold; font-size: 0.8rem; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-primary { background: var(--primary); color: white; }
-        .btn-primary:hover { background: var(--primary-hover); }
-        .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-        .btn-ghost:hover { background: #1e1e22; color: white; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-success { background: var(--success); color: white; }
+        .btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
 
-        /* Monitor Derecho */
-        .monitor-panel { flex: 1; display: flex; flex-direction: column; background: #050505; }
-        .monitor-header { height: 40px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 15px; justify-content: space-between; }
-        .log-view { flex: 1; overflow-y: auto; padding: 15px; font-family: 'JetBrains Mono', 'Menlo', monospace; font-size: 0.75rem; line-height: 1.5; }
+        /* Monitor Moderno */
+        .log-container { flex: 1; background: #fff; border-radius: 20px; border: 1px solid var(--border); overflow-y: auto; padding: 20px; }
+        .log-entry { margin-bottom: 20px; border-bottom: 1px solid #f1f5f9; padding-bottom: 15px; }
         
-        /* Log Entries */
-        .entry { margin-bottom: 15px; border-left: 2px solid #27272a; padding-left: 12px; animation: slideIn 0.2s ease-out; }
-        @keyframes slideIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
-        .entry-header { display: flex; gap: 10px; align-items: center; margin-bottom: 5px; }
-        .lvl { font-weight: 800; font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; }
-        .lvl-INFO { background: #064e3b; color: #10b981; }
-        .lvl-DEBUG { background: #1e1b4b; color: #818cf8; }
-        .lvl-ERROR { background: #450a0a; color: #f87171; }
-        .ts { color: #52525b; }
-        .dur { color: var(--warning); font-weight: bold; }
-        
-        .hex-box { background: #0f0f11; padding: 8px; border-radius: 4px; border: 1px solid #1e1e22; margin: 5px 0; color: #94a3b8; word-break: break-all; }
-        .data-viewer { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 8px; }
-        .val-card { background: #121214; border: 1px solid var(--border); padding: 8px; border-radius: 4px; }
-        .val-label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; display: block; }
-        .val-num { font-size: 1rem; font-weight: 700; color: var(--text); }
+        /* Pastel Badges */
+        .badge { padding: 4px 12px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; }
+        .badge-info { background: var(--p-blue); color: #1e40af; }
+        .badge-success { background: var(--p-green); color: #166534; }
+        .badge-error { background: var(--p-red); color: #991b1b; }
 
-        .loader { width: 12px; height: 12px; border: 2px solid #fff; border-bottom-color: transparent; border-radius: 50%; display: inline-block; animation: rotation 1s linear infinite; }
-        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .hex-stream { font-family: monospace; color: var(--muted); font-size: 0.7rem; background: #f8fafc; padding: 8px; border-radius: 8px; margin: 10px 0; border: 1px dashed var(--border); word-break: break-all; }
+        
+        /* Data Display */
+        .data-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 10px; }
+        .data-card { padding: 12px; border-radius: 15px; border: 1px solid var(--border); transition: 0.3s; }
+        .data-card.special { background: var(--p-yellow); border-color: #fef08a; }
+        .data-card.analog { background: var(--p-purple); border-color: #e9d5ff; }
+        .d-label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; font-weight: 800; }
+        .d-value { font-size: 1.1rem; font-weight: 900; color: var(--text); margin-top: 2px; }
     </style>
 </head>
 <body>
 
-<div class="toolbar">
-    <div class="logo">MODBUS MASTER EXPERT <span style="font-weight:300; color:var(--muted)">v2.0</span></div>
-    <div class="conn-status">
-        <div id="dot" class="dot"></div>
-        <span id="wsLabel">SIN CONEXIÓN</span>
+<div class="header">
+    <div style="display:flex; align-items:center; gap:15px;">
+        <span style="font-size:1.4rem; font-weight:900; color:var(--primary); letter-spacing: -1px;">ROC MASTER EXPERT</span>
+        <span id="wsStatus" class="badge badge-info">● Sincronizando</span>
     </div>
+    <button class="btn btn-primary" style="background:var(--p-red); color:#991b1b;" onclick="document.getElementById('logView').innerHTML=''">Limpiar Monitor</button>
 </div>
 
-<div class="app-container">
+<div class="container">
     <div class="sidebar">
-        <div class="section-title">Estaciones Guardadas</div>
-        <div id="stationList" class="station-list"></div>
-        <div style="padding: 15px;">
-            <button class="btn btn-ghost" style="width:100%" onclick="saveConfig()">Guardar YAML</button>
+        <div class="card">
+            <h3>Configuración ROC</h3>
+            <div class="form-grid">
+                <div class="field" style="grid-column: span 2;"><label>IP Dispositivo</label><input type="text" id="ip" value="10.50.184.208"></div>
+                <div class="field"><label>Slave ID</label><input type="number" id="sid" value="10"></div>
+                <div class="field"><label>Base Histórica</label><input type="number" id="dbAddr" value="700"></div>
+            </div>
+            
+            <div class="form-grid" style="margin-top:10px; border-top:1px solid #f1f5f9; padding-top:10px;">
+                <div class="field"><label>Puntero @</label><input type="number" id="ptrAddr" value="10000"></div>
+                <div class="field"><label>Puntero Qty</label><input type="number" id="ptrQty" value="2"></div>
+                <div class="field"><label>Puntero Endian</label>
+                    <select id="ptrEndian" onchange="forceReactive()">
+                        <option value="cdab">Word Swap</option>
+                        <option value="dcba">Little Endian</option>
+                        <option value="abcd">Big Endian</option>
+                    </select>
+                </div>
+                <div class="field"><label>Hist. Endian</label>
+                    <select id="dbEndian" onchange="forceReactive()">
+                        <option value="cdab">Word Swap</option>
+                        <option value="dcba">Little Endian</option>
+                        <option value="abcd">Big Endian</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Operaciones</h3>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <button class="btn btn-primary" onclick="executeAction('ptr')">Leer Puntero</button>
+                <button class="btn btn-primary" onclick="executeAction('hist')">Leer Histórico</button>
+            </div>
+            <button class="btn btn-success" style="width:100%; margin-top:10px;" onclick="executeAction('full')">Flujo Completo ROC ➜</button>
+            <div class="field" style="margin-top:15px;">
+                <label>Último Puntero / Valor Manual</label>
+                <input type="number" id="manualPtr" placeholder="Puntero...">
+            </div>
+        </div>
+
+        <div class="card" id="stationList">
+            <h3>Estaciones Guardadas</h3>
         </div>
     </div>
 
-    <div class="editor-panel">
-        <div class="group">
-            <div class="group-title">PARÁMETROS DE CONEXIÓN</div>
-            <div class="form-grid">
-                <div class="field"><label>Dirección IP</label><input type="text" id="ip" value="10.50.184.208"></div>
-                <div class="field"><label>Puerto TCP</label><input type="number" id="port" value="502"></div>
-                <div class="field" style="grid-column: span 2;"><label>ID del Esclavo (Unit ID)</label><input type="number" id="sid" value="2"></div>
-            </div>
+    <div class="main">
+        <div class="card" style="flex: 1; display: flex; flex-direction: column;">
+            <h3>Monitor ROC (Reactivo)</h3>
+            <div id="logView" class="log-container"></div>
         </div>
-
-        <div class="group">
-            <div class="group-title">PETICIÓN DE REGISTROS</div>
-            <div class="form-grid">
-                <div class="field" style="grid-column: span 2;">
-                    <label>Función Modbus</label>
-                    <select id="func">
-                        <option value="3">03 Read Holding Registers</option>
-                        <option value="4">04 Read Input Registers</option>
-                    </select>
-                </div>
-                <div class="field"><label>Dirección Inicio</label><input type="number" id="addr" value="10000"></div>
-                <div class="field"><label>Cantidad (Reg)</label><input type="number" id="qty" value="2"></div>
-            </div>
-        </div>
-
-        <div class="group">
-            <div class="group-title">INTERPRETACIÓN</div>
-            <div class="form-grid">
-                <div class="field" style="grid-column: span 2;">
-                    <label>Formato de Datos</label>
-                    <select id="dtype">
-                        <option value="float32">Float 32 (IEEE 754)</option>
-                        <option value="int16">Entero 16 bits</option>
-                    </select>
-                </div>
-                <div class="field" style="grid-column: span 2;">
-                    <label>Orden de Bytes (Endianness)</label>
-                    <select id="endian">
-                        <option value="dcba">Little Endian / DCBA (Swapped)</option>
-                        <option value="cdab">Word Swap / CDAB</option>
-                        <option value="abcd">Big Endian / ABCD</option>
-                        <option value="badc">Byte Swap / BADC</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-
-        <button id="readBtn" class="btn btn-primary" onclick="doRead()">
-            <span>REALIZAR LECTURA</span>
-            <div id="loader" class="loader" style="display:none"></div>
-        </button>
-
-        <div class="group" style="margin-top:25px;">
-            <div class="group-title">INYECCIÓN RAW (HEX)</div>
-            <textarea id="rawHex" rows="3" placeholder="Ej: 000100000006020327100002"></textarea>
-            <button class="btn btn-ghost" style="width:100%; margin-top:8px;" onclick="sendRaw()">ENVIAR TRAMA MANUAL</button>
-        </div>
-    </div>
-
-    <div class="monitor-panel">
-        <div class="monitor-header">
-            <div style="font-size:0.75rem; font-weight:700; color:var(--muted)">MONITOR DE TRÁFICO</div>
-            <button class="btn btn-ghost" style="padding:4px 10px; font-size:0.65rem;" onclick="clearLogs()">Limpiar Consola</button>
-        </div>
-        <div id="logView" class="log-view"></div>
     </div>
 </div>
 
 <script>
-    let globalConfig = { stations: [] };
-    let isReading = false;
+    let stations = [];
+    let logsData = [];
 
     async function init() {
-        try {
-            const res = await fetch('/api/config');
-            globalConfig = await res.json();
-            renderStations();
-        } catch(e) {}
+        const res = await fetch('/api/config');
+        const cfg = await res.json();
+        stations = cfg.stations;
+        renderStationList();
         setupWS();
     }
 
-    function renderStations() {
-        const container = document.getElementById('stationList');
-        container.innerHTML = globalConfig.stations.map((st, i) => `
-            <div class="station-item" onclick="loadStation(${i})">
-                <span class="station-name">${st.name}</span>
-                <span class="station-ip">${st.ip} (ID: ${st.id})</span>
+    function renderStationList() {
+        document.getElementById('stationList').innerHTML += stations.map((st, i) => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border-radius:12px; background:#f8fafc; margin-bottom:8px; border:1px solid #e2e8f0;">
+                <span style="font-size:0.8rem; font-weight:700;">${st.name}</span>
+                <button class="btn btn-primary" style="padding:4px 10px; font-size:0.6rem;" onclick="loadStation(${i})">Cargar</button>
             </div>
         `).join('');
     }
 
     function loadStation(i) {
-        const st = globalConfig.stations[i];
+        const st = stations[i];
         document.getElementById('ip').value = st.ip;
         document.getElementById('sid').value = st.id;
-        document.getElementById('addr').value = st.start_addr || 10000;
-        document.getElementById('qty').value = st.quantity || 2;
-        document.getElementById('endian').value = st.endian || 'dcba';
-        
-        document.querySelectorAll('.station-item').forEach((el, idx) => {
-            el.classList.toggle('active', idx === i);
-        });
+        document.getElementById('ptrAddr').value = st.pointer_address;
+        document.getElementById('ptrQty').value = st.data_registers_count;
+        document.getElementById('dbAddr').value = st.db_address;
+        document.getElementById('ptrEndian').value = st.pointer_endian;
+        document.getElementById('dbEndian').value = st.db_endian;
     }
 
-    async function doRead() {
-        if (isReading) return;
-        setLoading(true);
+    async function executeAction(mode) {
         const payload = {
-            ip: document.getElementById('ip').value,
-            port: parseInt(document.getElementById('port').value),
+            ip: document.getElementById('ip').value, port: 502,
             id: parseInt(document.getElementById('sid').value),
-            addr: parseInt(document.getElementById('addr').value),
-            count: parseInt(document.getElementById('qty').value),
-            endian: document.getElementById('endian').value
+            pointer_endian: document.getElementById('ptrEndian').value,
+            pointer_address: parseInt(document.getElementById('ptrAddr').value),
+            pointer_qty: parseInt(document.getElementById('ptrQty').value),
+            db_endian: document.getElementById('dbEndian').value,
+            db_address: parseInt(document.getElementById('dbAddr').value),
+            mode: mode,
+            manual_ptr: document.getElementById('manualPtr').value ? parseFloat(document.getElementById('manualPtr').value) : null
         };
-        try {
-            await fetch('/api/test', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
-        } catch(e) {}
-        setLoading(false);
+        const res = await fetch('/api/test', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (data.pointer_val) document.getElementById('manualPtr').value = Math.floor(data.pointer_val);
     }
 
-    function setLoading(val) {
-        isReading = val;
-        document.getElementById('loader').style.display = val ? 'inline-block' : 'none';
-        document.getElementById('readBtn').disabled = val;
-    }
-
-    async function sendRaw() {
-        const hex = document.getElementById('rawHex').value.replace(/\s/g, '');
-        if (!hex) return;
-        await fetch('/api/raw', { 
-            method: 'POST', 
-            headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ ip: document.getElementById('ip').value, port: parseInt(document.getElementById('port').value), hex: hex }) 
-        });
-    }
-
-    async function saveConfig() {
-        await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(globalConfig) });
-        alert('Configuración YAML actualizada correctamente.');
+    function forceReactive() {
+        const view = document.getElementById('logView');
+        view.innerHTML = '';
+        logsData.forEach(l => addLogEntry(l));
     }
 
     function setupWS() {
         const ws = new WebSocket(`ws://${window.location.host}/ws`);
-        const dot = document.getElementById('dot');
-        const label = document.getElementById('wsLabel');
-        ws.onopen = () => { dot.classList.add('active'); label.innerText = 'CONECTADO'; };
-        ws.onclose = () => { dot.classList.remove('active'); label.innerText = 'DESCONECTADO'; setTimeout(setupWS, 2000); };
-        ws.onmessage = (e) => addLog(JSON.parse(e.data));
+        ws.onmessage = (e) => {
+            const l = JSON.parse(e.data);
+            logsData.unshift(l);
+            if (logsData.length > 50) logsData.pop();
+            addLogEntry(l);
+        };
+        ws.onopen = () => { document.getElementById('wsStatus').className = 'badge badge-success'; document.getElementById('wsStatus').innerText = '● En Línea'; };
+        ws.onclose = () => { document.getElementById('wsStatus').className = 'badge badge-error'; document.getElementById('wsStatus').innerText = '● Desconectado'; setTimeout(setupWS, 2000); };
     }
 
-    function addLog(l) {
+    function addLogEntry(l) {
         const view = document.getElementById('logView');
-        const div = document.createElement('div');
-        div.className = 'entry';
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        const hex = l.raw_hex || "";
         
-        let decodeContent = '';
-        if (l.raw_hex) {
-            decodeContent = `
-                <div class="hex-box">${l.raw_hex.match(/.{1,2}/g).join(' ')}</div>
-                <div class="data-viewer">${decodeData(l.raw_hex)}</div>
-            `;
-        }
-
-        div.innerHTML = `
-            <div class="entry-header">
-                <span class="lvl lvl-${l.level}">${l.level}</span>
-                <span class="ts">${l.timestamp}</span>
-                <span style="font-weight:600">${l.message}</span>
-                ${l.duration ? `<span class="dur">${l.duration}</span>` : ''}
+        entry.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <span class="badge ${l.level === 'INFO' ? 'badge-success' : 'badge-error'}">${l.level}</span>
+                    <span style="font-weight:800; font-size:0.8rem;">${l.message}</span>
+                </div>
+                <span style="color:var(--muted); font-size:0.7rem; font-weight:700;">${l.timestamp}</span>
             </div>
-            ${decodeContent}
+            ${hex ? `<div class="hex-stream">${hex.match(/.{1,2}/g).join(' ')}</div>` : ''}
+            <div class="data-grid">${hex ? decodeReactive(hex) : ''}</div>
         `;
-        view.appendChild(div);
-        view.scrollTop = view.scrollHeight;
+        view.prepend(entry);
     }
 
-    function decodeData(hex) {
+    function decodeReactive(hex) {
         if (hex.length < 18) return '';
-        const unit = hex.substring(12,14);
-        const func = hex.substring(14,16);
         const data = hex.substring(18);
+        const endian = document.getElementById('dbEndian').value;
+        const b = []; for(let i=0; i<data.length; i+=2) b.push(parseInt(data.substr(i,2), 16));
         
-        let res = `<div class="val-card"><span class="val-label">ID / Función</span><span class="val-num">${unit} / ${func}</span></div>`;
-
-        if (data.length === 8) {
-            const b = []; for(let i=0; i<8; i+=2) b.push(parseInt(data.substr(i,2), 16));
-            const endian = document.getElementById('endian').value;
+        let html = '';
+        const floats = [];
+        for (let i = 0; i+4 <= b.length; i += 4) {
+            const s = b.slice(i, i+4);
             let val = 0;
-            
-            // Lógica de decodificación IEEE 754
-            if (endian === 'dcba') val = hexToFloat((b[3] << 24) | (b[2] << 16) | (b[1] << 8) | b[0]);
-            else if (endian === 'cdab') val = hexToFloat((b[2] << 24) | (b[3] << 16) | (b[0] << 8) | b[1]);
-            else if (endian === 'badc') val = hexToFloat((b[1] << 24) | (b[0] << 16) | (b[3] << 8) | b[2]);
-            else val = hexToFloat((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]);
-
-            res += `<div class="val-card" style="border-left-color:var(--success)"><span class="val-label">Float 32 (${endian.toUpperCase()})</span><span class="val-num">${val.toFixed(5)}</span></div>`;
-        } else if (data.length > 0) {
-            res += `<div class="val-card" style="grid-column: span 2"><span class="val-label">Bytes de Datos (RAW)</span><span class="val-num" style="font-size:0.7rem">${data}</span></div>`;
+            if (endian === 'dcba') val = hexToFloat((s[3] << 24) | (s[2] << 16) | (s[1] << 8) | s[0]);
+            else if (endian === 'cdab') val = hexToFloat((s[2] << 24) | (s[3] << 16) | (s[0] << 8) | s[1]);
+            else val = hexToFloat((s[0] << 24) | (s[1] << 16) | (s[2] << 8) | s[3]);
+            floats.push(val);
         }
-        return res;
+
+        if (floats.length >= 2) {
+            html += `<div class="data-card special"><span class="d-label">FECHA (m/dd/yy)</span><span class="d-value">${parseROCDate(floats[0])}</span></div>`;
+            html += `<div class="data-card special"><span class="d-label">HORA (MILITAR)</span><span class="d-value">${parseROCTime(floats[1])}</span></div>`;
+            for(let i=2; i<floats.length; i++) {
+                html += `<div class="data-card analog"><span class="d-label">ANÁLOGO ${i-1}</span><span class="d-value">${floats[i].toFixed(4)}</span></div>`;
+            }
+        } else if (floats.length === 1) {
+            html += `<div class="data-card"><span class="d-label">Puntero/Valor</span><span class="d-value">${floats[0].toFixed(0)}</span></div>`;
+        }
+        return html;
+    }
+
+    function parseROCDate(val) {
+        const s = Math.floor(val).toString();
+        if (s.length < 5) return s;
+        const y = s.slice(-2); const d = s.slice(-4, -2); const m = s.slice(0, s.length - 4);
+        return `${m}/${d}/${y}`;
+    }
+
+    function parseROCTime(val) {
+        const s = Math.floor(val).toString().padStart(4, '0');
+        return `${s.slice(0,2)}:${s.slice(2,4)}`;
     }
 
     function hexToFloat(hexInt) {
-        const buf = new ArrayBuffer(4);
-        (new DataView(buf)).setUint32(0, hexInt >>> 0, false);
+        const buf = new ArrayBuffer(4); (new DataView(buf)).setUint32(0, hexInt >>> 0, false);
         return (new DataView(buf)).getFloat32(0, false);
     }
 
-    function clearLogs() { document.getElementById('logView').innerHTML = ''; }
     init();
 </script>
 </body>

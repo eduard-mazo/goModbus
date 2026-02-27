@@ -1,17 +1,19 @@
 stations:
-  - ip: "10.155.150.201"
+  - name: "Estación 1"
+    ip: "10.155.150.201"
     port: 502
     id: 10
-    name: "Estación_1"
-    endian: "little"
-    total_records: 840
-    pointer_addr: 10000
-    data_addr: 700
-  - ip: "10.50.184.208"
+    endian: "cdab" # (Word Swapped) es común
+    data_type: "float32"
+    pointer_address: 10000 # Dirección para leer el apuntador
+    base_data_address: 700 # Dirección base para los datos
+    data_registers_count: 2
+  - name: "Estación 2"
+    ip: "10.50.184.208"
     port: 502
     id: 2
-    name: "Estación_2"
-    endian: "big"
-    total_records: 840
-    pointer_addr: 10000
-    data_addr: 700
+    endian: "dcba" # (Little Endian)
+    data_type: "float32"
+    pointer_address: 10000 # Dirección para leer el apuntador
+    base_data_address: 700 # Dirección base para los datos
+    data_registers_count: 1
