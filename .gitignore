@@ -1,2 +1,6 @@
 modbus_client
 modbus_client.exe
+modbus_client-debug
+goModbus
+session.md
+logs/

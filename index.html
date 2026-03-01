@@ -1,265 +1,904 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" x-data="app()" x-init="init()">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ROC Master Expert | Dashboard Reactivo</title>
-    <style>
-        :root {
-            --bg: #f8fafc; --panel: #ffffff; --primary: #3b82f6;
-            --text: #1e293b; --muted: #64748b; --border: #e2e8f0;
-            --success: #10b981; --error: #ef4444; --accent: #f59e0b;
-            /* Pastel Palette */
-            --p-blue: #dbeafe; --p-green: #dcfce7; --p-red: #fee2e2;
-            --p-yellow: #fef9c3; --p-purple: #f3e8ff;
-        }
-        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
-        body { background: var(--bg); color: var(--text); margin: 0; padding: 20px; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
-        
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .container { display: flex; gap: 20px; flex: 1; overflow: hidden; }
-        
-        .sidebar { flex: 0 0 400px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
-        .main { flex: 1; display: flex; flex-direction: column; gap: 15px; overflow: hidden; }
-        
-        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
-        h3 { margin: 0 0 15px 0; font-size: 0.8rem; text-transform: uppercase; color: var(--primary); letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
-        
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .field { margin-bottom: 10px; }
-        label { display: block; font-size: 0.65rem; color: var(--muted); margin-bottom: 4px; font-weight: 700; text-transform: uppercase; }
-        input, select { 
-            width: 100%; background: #f1f5f9; border: 1px solid var(--border); color: var(--text); 
-            padding: 10px; border-radius: 10px; font-size: 0.85rem; outline: none; transition: 0.2s;
-        }
-        input:focus { border-color: var(--primary); background: #fff; }
-        
-        .btn { cursor: pointer; border: none; padding: 12px; border-radius: 12px; font-weight: bold; font-size: 0.8rem; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-success { background: var(--success); color: white; }
-        .btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
-
-        /* Monitor Moderno */
-        .log-container { flex: 1; background: #fff; border-radius: 20px; border: 1px solid var(--border); overflow-y: auto; padding: 20px; }
-        .log-entry { margin-bottom: 20px; border-bottom: 1px solid #f1f5f9; padding-bottom: 15px; }
-        
-        /* Pastel Badges */
-        .badge { padding: 4px 12px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; }
-        .badge-info { background: var(--p-blue); color: #1e40af; }
-        .badge-success { background: var(--p-green); color: #166534; }
-        .badge-error { background: var(--p-red); color: #991b1b; }
-
-        .hex-stream { font-family: monospace; color: var(--muted); font-size: 0.7rem; background: #f8fafc; padding: 8px; border-radius: 8px; margin: 10px 0; border: 1px dashed var(--border); word-break: break-all; }
-        
-        /* Data Display */
-        .data-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 10px; }
-        .data-card { padding: 12px; border-radius: 15px; border: 1px solid var(--border); transition: 0.3s; }
-        .data-card.special { background: var(--p-yellow); border-color: #fef08a; }
-        .data-card.analog { background: var(--p-purple); border-color: #e9d5ff; }
-        .d-label { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; font-weight: 800; }
-        .d-value { font-size: 1.1rem; font-weight: 900; color: var(--text); margin-top: 2px; }
-    </style>
-</head>
-<body>
-
-<div class="header">
-    <div style="display:flex; align-items:center; gap:15px;">
-        <span style="font-size:1.4rem; font-weight:900; color:var(--primary); letter-spacing: -1px;">ROC MASTER EXPERT</span>
-        <span id="wsStatus" class="badge badge-info">● Sincronizando</span>
-    </div>
-    <button class="btn btn-primary" style="background:var(--p-red); color:#991b1b;" onclick="document.getElementById('logView').innerHTML=''">Limpiar Monitor</button>
-</div>
-
-<div class="container">
-    <div class="sidebar">
-        <div class="card">
-            <h3>Configuración ROC</h3>
-            <div class="form-grid">
-                <div class="field" style="grid-column: span 2;"><label>IP Dispositivo</label><input type="text" id="ip" value="10.50.184.208"></div>
-                <div class="field"><label>Slave ID</label><input type="number" id="sid" value="10"></div>
-                <div class="field"><label>Base Histórica</label><input type="number" id="dbAddr" value="700"></div>
-            </div>
-            
-            <div class="form-grid" style="margin-top:10px; border-top:1px solid #f1f5f9; padding-top:10px;">
-                <div class="field"><label>Puntero @</label><input type="number" id="ptrAddr" value="10000"></div>
-                <div class="field"><label>Puntero Qty</label><input type="number" id="ptrQty" value="2"></div>
-                <div class="field"><label>Puntero Endian</label>
-                    <select id="ptrEndian" onchange="forceReactive()">
-                        <option value="cdab">Word Swap</option>
-                        <option value="dcba">Little Endian</option>
-                        <option value="abcd">Big Endian</option>
-                    </select>
-                </div>
-                <div class="field"><label>Hist. Endian</label>
-                    <select id="dbEndian" onchange="forceReactive()">
-                        <option value="cdab">Word Swap</option>
-                        <option value="dcba">Little Endian</option>
-                        <option value="abcd">Big Endian</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-
-        <div class="card">
-            <h3>Operaciones</h3>
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                <button class="btn btn-primary" onclick="executeAction('ptr')">Leer Puntero</button>
-                <button class="btn btn-primary" onclick="executeAction('hist')">Leer Histórico</button>
-            </div>
-            <button class="btn btn-success" style="width:100%; margin-top:10px;" onclick="executeAction('full')">Flujo Completo ROC ➜</button>
-            <div class="field" style="margin-top:15px;">
-                <label>Último Puntero / Valor Manual</label>
-                <input type="number" id="manualPtr" placeholder="Puntero...">
-            </div>
-        </div>
-
-        <div class="card" id="stationList">
-            <h3>Estaciones Guardadas</h3>
-        </div>
-    </div>
-
-    <div class="main">
-        <div class="card" style="flex: 1; display: flex; flex-direction: column;">
-            <h3>Monitor ROC (Reactivo)</h3>
-            <div id="logView" class="log-container"></div>
-        </div>
-    </div>
-</div>
-
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ROC Modbus Expert · EPM</title>
+<script src="/static/tailwind.min.js"></script>
 <script>
-    let stations = [];
-    let logsData = [];
+tailwind.config = {
+  theme: { extend: { colors: {
+    g: { 50:'#f8faf8', 100:'#f0f4f0', 200:'#e2e8e2', 300:'#c5cfc5',
+         400:'#94a394', 500:'#6b7d6b', 600:'#4d5e4d', 700:'#374437', 800:'#222e22', 900:'#141c14' },
+    lime: { DEFAULT:'#7AD400', dk:'#5fa300', lt:'#e4f9a6', 'x-lt':'#f4fce8' },
+    forest: { DEFAULT:'#007934', dk:'#005526', lt:'#d4eddf' },
+  }}},
+}
+</script>
+<link href="/static/fonts.css" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: 'IBM Plex Sans', sans-serif; background: #f0f4f0; color: #1a2a1a; font-size: 13px; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
 
-    async function init() {
-        const res = await fetch('/api/config');
-        const cfg = await res.json();
-        stations = cfg.stations;
-        renderStationList();
-        setupWS();
-    }
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c5cfc5; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: #7AD400; }
 
-    function renderStationList() {
-        document.getElementById('stationList').innerHTML += stations.map((st, i) => `
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border-radius:12px; background:#f8fafc; margin-bottom:8px; border:1px solid #e2e8f0;">
-                <span style="font-size:0.8rem; font-weight:700;">${st.name}</span>
-                <button class="btn btn-primary" style="padding:4px 10px; font-size:0.6rem;" onclick="loadStation(${i})">Cargar</button>
+  /* Layout primitives */
+  [x-cloak] { display: none !important; }
+
+  /* Form controls */
+  .fi { /* field input */
+    width: 100%; height: 30px; padding: 0 8px;
+    background: #fff; border: 1px solid #d1d8d1; border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1a2a1a;
+    outline: none; transition: border-color .12s;
+  }
+  .fi:focus { border-color: #7AD400; box-shadow: 0 0 0 2px rgba(122,212,0,.15); }
+  .fi-sm { height: 26px; font-size: 11px; }
+  .fs { /* field select */
+    width: 100%; height: 30px; padding: 0 24px 0 8px;
+    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7d6b'/%3E%3C/svg%3E") no-repeat right 8px center;
+    border: 1px solid #d1d8d1; border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1a2a1a;
+    outline: none; appearance: none; transition: border-color .12s;
+  }
+  .fs:focus { border-color: #7AD400; box-shadow: 0 0 0 2px rgba(122,212,0,.15); }
+  .lbl { display: block; font-size: 10px; font-weight: 600; color: #6b7d6b; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 3px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; white-space: nowrap; transition: background .12s, opacity .12s; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-lime   { background: #7AD400; color: #fff; }
+  .btn-lime:hover:not(:disabled)   { background: #5fa300; }
+  .btn-forest { background: #007934; color: #fff; }
+  .btn-forest:hover:not(:disabled) { background: #005526; }
+  .btn-ghost  { background: transparent; color: #4d5e4d; border: 1px solid #d1d8d1; }
+  .btn-ghost:hover:not(:disabled)  { border-color: #7AD400; color: #007934; }
+  .btn-danger { background: #dc2626; color: #fff; }
+  .btn-danger:hover:not(:disabled) { background: #b91c1c; }
+  .btn-sm { height: 26px; padding: 0 10px; font-size: 11px; }
+
+  /* Cards */
+  .card { background: #fff; border: 1px solid #e2e8e2; border-radius: 4px; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #e2e8e2; }
+  .card-title { font-size: 11px; font-weight: 700; color: #374437; text-transform: uppercase; letter-spacing: .08em; }
+
+  /* Tabs */
+  .tab { padding: 0 16px; height: 38px; font-size: 12px; font-weight: 600; border: none; background: none; cursor: pointer; color: #6b7d6b; border-bottom: 2px solid transparent; transition: color .12s, border-color .12s; display: inline-flex; align-items: center; gap: 7px; }
+  .tab:hover { color: #374437; }
+  .tab.active { color: #007934; border-bottom-color: #7AD400; }
+
+  /* Byte cells */
+  .byte { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; }
+  .byte-req { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+  .byte-res { background: #f4fce8; border: 1px solid #bef264; color: #3a5c00; }
+
+  /* Log terminal */
+  .terminal { background: #0a0f0a; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .log-INFO  { color: #7AD400; }
+  .log-DEBUG { color: #60a5fa; }
+  .log-ERROR { color: #f87171; }
+  .log-WARN  { color: #fbbf24; }
+
+  /* Section within sidebar */
+  .sbar-section { padding: 12px; border-bottom: 1px solid #1e2a1f; }
+  .sbar-label { font-size: 10px; font-weight: 600; color: #4d6b4d; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+
+  /* Coil grid item */
+  .coil-on  { background: #7AD400; color: #fff; }
+  .coil-off { background: #e2e8e2; color: #94a394; }
+
+  /* Fade in */
+  @keyframes fi { from { opacity:0; transform:translateY(3px); } to { opacity:1; transform:none; } }
+  .fade { animation: fi .15s ease; }
+
+  /* Bar chart container */
+  .bar-chart-wrap { display: flex; align-items: flex-end; gap: 2px; height: 140px; padding: 0 4px; }
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: default; position: relative; }
+  .bar-col:hover .bar-tip { display: block; }
+  .bar-body { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; background: #7AD400; transition: background .1s; }
+  .bar-body.invalid { background: #e2e8e2; }
+  .bar-body.current { background: #007934; }
+  .bar-lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #6b7d6b; }
+  .bar-tip { display: none; position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); background: #0a0f0a; color: #e2e8e2; font-family: 'JetBrains Mono', monospace; font-size: 10px; padding: 4px 8px; border-radius: 3px; white-space: nowrap; z-index: 10; }
+
+  /* Spin */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin .7s linear infinite; }
+
+  /* Sidebar station item */
+  .station-item { padding: 8px 10px; border-radius: 3px; border: 1px solid #1e2a1f; cursor: pointer; transition: border-color .1s, background .1s; margin-bottom: 4px; }
+  .station-item:hover { border-color: #7AD400; background: #0f1a10; }
+  .station-name { font-size: 12px; color: #c5cfc5; font-weight: 500; }
+  .station-sub { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #4d6b4d; margin-top: 2px; }
+</style>
+</head>
+
+<body class="flex flex-col" style="height:100vh;">
+
+<!-- ═══════════ HEADER ═══════════ -->
+<header style="background:#0f1710; border-bottom:2px solid #7AD400; flex-shrink:0;"
+        class="flex items-center justify-between px-4" style2="height:44px;">
+  <div style="height:44px;" class="flex items-center gap-3">
+    <div class="mono" style="font-size:18px; font-weight:700; color:#7AD400; letter-spacing:-.02em;">
+      ROC<span style="color:#4d6b4d;">/</span>Modbus
+    </div>
+    <div style="width:1px;height:20px;background:#1e2a1f;"></div>
+    <span style="font-size:11px;font-weight:600;color:#4d6b4d;letter-spacing:.12em;text-transform:uppercase;">EPM Industrial</span>
+  </div>
+  <div class="flex items-center gap-4">
+    <!-- WS indicator -->
+    <div class="flex items-center gap-2">
+      <div style="width:7px;height:7px;border-radius:50%;"
+           :style="wsConnected ? 'background:#7AD400;box-shadow:0 0 6px #7AD400;' : 'background:#6b7280;'"></div>
+      <span style="font-size:11px;color:#4d6b4d;" x-text="wsConnected ? 'WebSocket' : 'offline'"></span>
+    </div>
+    <!-- Log toggle -->
+    <button @click="logOpen=!logOpen" class="btn btn-ghost btn-sm" style="border-color:#1e2a1f;color:#4d6b4d;">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/>
+      </svg>
+      <span x-text="logOpen ? 'Cerrar log' : 'Log'"></span>
+    </button>
+  </div>
+</header>
+
+<!-- ═══════════ BODY ═══════════ -->
+<div class="flex flex-1 min-h-0">
+
+  <!-- ─── SIDEBAR ─── -->
+  <aside style="width:240px;background:#0f1710;border-right:1px solid #1e2a1f;flex-shrink:0;overflow-y:auto;display:flex;flex-direction:column;">
+
+    <!-- TCP Config -->
+    <div class="sbar-section">
+      <div class="sbar-label">Conexión TCP</div>
+      <div style="display:grid;gap:6px;">
+        <div>
+          <label class="lbl" style="color:#4d6b4d;">IP</label>
+          <input x-model="conn.ip" class="fi mono" style="background:#0a0f0a;border-color:#1e2a1f;color:#c5cfc5;" placeholder="192.168.1.1"/>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <div>
+            <label class="lbl" style="color:#4d6b4d;">Puerto</label>
+            <input x-model.number="conn.port" type="number" class="fi mono" style="background:#0a0f0a;border-color:#1e2a1f;color:#c5cfc5;" placeholder="502"/>
+          </div>
+          <div>
+            <label class="lbl" style="color:#4d6b4d;">Esclavo</label>
+            <input x-model.number="conn.slaveId" type="number" min="1" max="247" class="fi mono" style="background:#0a0f0a;border-color:#1e2a1f;color:#c5cfc5;"/>
+          </div>
+        </div>
+        <div>
+          <label class="lbl" style="color:#4d6b4d;">Endianness</label>
+          <select x-model="conn.endian" class="fs mono" style="background:#0a0f0a;border-color:#1e2a1f;color:#c5cfc5;">
+            <option value="abcd">ABCD — Big-Endian</option>
+            <option value="dcba">DCBA — Little-Endian</option>
+            <option value="cdab">CDAB — Word-Swap (ROC)</option>
+            <option value="badc">BADC — Byte-Swap</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stations -->
+    <div class="sbar-section flex-1">
+      <div class="flex items-center justify-between" style="margin-bottom:8px;">
+        <div class="sbar-label" style="margin-bottom:0;">Estaciones</div>
+        <button @click="loadStations()" style="background:none;border:none;cursor:pointer;color:#4d6b4d;padding:2px;">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+          </svg>
+        </button>
+      </div>
+      <template x-if="stations.length===0">
+        <div style="font-size:11px;color:#4d6b4d;font-style:italic;">Sin presets en config.yaml</div>
+      </template>
+      <template x-for="(st,i) in stations" :key="i">
+        <div class="station-item" @click="applyStation(st)">
+          <div class="station-name" x-text="st.name"></div>
+          <div class="station-sub" x-text="`${st.ip}:${st.port}  ID ${st.id}`"></div>
+        </div>
+      </template>
+    </div>
+  </aside>
+
+  <!-- ─── MAIN ─── -->
+  <main class="flex-1 flex flex-col min-w-0 overflow-hidden" style="background:#f0f4f0;">
+
+    <!-- Tabs bar -->
+    <div style="background:#fff;border-bottom:1px solid #e2e8e2;flex-shrink:0;display:flex;align-items:flex-end;padding:0 12px;">
+      <button class="tab" :class="activeTab==='query'?'active':''" @click="activeTab='query'">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9h16.5m-16.5 6.75h16.5"/>
+        </svg>
+        Consulta Modbus
+      </button>
+      <button class="tab" :class="activeTab==='roc'?'active':''" @click="activeTab='roc'">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3"/>
+        </svg>
+        ROC Expert
+      </button>
+    </div>
+
+    <!-- Scrollable content -->
+    <div class="flex-1 overflow-y-auto" style="padding:14px;display:flex;flex-direction:column;gap:12px;">
+
+      <!-- ══════════ TAB: CONSULTA MODBUS ══════════ -->
+      <template x-if="activeTab==='query'">
+        <div style="display:flex;flex-direction:column;gap:12px;" class="fade">
+
+          <!-- Query form -->
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">Parámetros</span>
+              <!-- Live ADU preview -->
+              <code class="mono" style="font-size:10px;color:#94a394;background:#f0f4f0;padding:3px 8px;border-radius:2px;" x-text="aduPreview()"></code>
             </div>
-        `).join('');
-    }
-
-    function loadStation(i) {
-        const st = stations[i];
-        document.getElementById('ip').value = st.ip;
-        document.getElementById('sid').value = st.id;
-        document.getElementById('ptrAddr').value = st.pointer_address;
-        document.getElementById('ptrQty').value = st.data_registers_count;
-        document.getElementById('dbAddr').value = st.db_address;
-        document.getElementById('ptrEndian').value = st.pointer_endian;
-        document.getElementById('dbEndian').value = st.db_endian;
-    }
-
-    async function executeAction(mode) {
-        const payload = {
-            ip: document.getElementById('ip').value, port: 502,
-            id: parseInt(document.getElementById('sid').value),
-            pointer_endian: document.getElementById('ptrEndian').value,
-            pointer_address: parseInt(document.getElementById('ptrAddr').value),
-            pointer_qty: parseInt(document.getElementById('ptrQty').value),
-            db_endian: document.getElementById('dbEndian').value,
-            db_address: parseInt(document.getElementById('dbAddr').value),
-            mode: mode,
-            manual_ptr: document.getElementById('manualPtr').value ? parseFloat(document.getElementById('manualPtr').value) : null
-        };
-        const res = await fetch('/api/test', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
-        const data = await res.json();
-        if (data.pointer_val) document.getElementById('manualPtr').value = Math.floor(data.pointer_val);
-    }
-
-    function forceReactive() {
-        const view = document.getElementById('logView');
-        view.innerHTML = '';
-        logsData.forEach(l => addLogEntry(l));
-    }
-
-    function setupWS() {
-        const ws = new WebSocket(`ws://${window.location.host}/ws`);
-        ws.onmessage = (e) => {
-            const l = JSON.parse(e.data);
-            logsData.unshift(l);
-            if (logsData.length > 50) logsData.pop();
-            addLogEntry(l);
-        };
-        ws.onopen = () => { document.getElementById('wsStatus').className = 'badge badge-success'; document.getElementById('wsStatus').innerText = '● En Línea'; };
-        ws.onclose = () => { document.getElementById('wsStatus').className = 'badge badge-error'; document.getElementById('wsStatus').innerText = '● Desconectado'; setTimeout(setupWS, 2000); };
-    }
-
-    function addLogEntry(l) {
-        const view = document.getElementById('logView');
-        const entry = document.createElement('div');
-        entry.className = 'log-entry';
-        const hex = l.raw_hex || "";
-        
-        entry.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <span class="badge ${l.level === 'INFO' ? 'badge-success' : 'badge-error'}">${l.level}</span>
-                    <span style="font-weight:800; font-size:0.8rem;">${l.message}</span>
+            <div style="padding:12px;display:flex;flex-direction:column;gap:10px;">
+              <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;">
+                <div>
+                  <label class="lbl">Función (FC)</label>
+                  <select x-model.number="q.fc" class="fs">
+                    <option value="1">FC01 — Read Coils</option>
+                    <option value="2">FC02 — Read Discrete Inputs</option>
+                    <option value="3">FC03 — Read Holding Registers</option>
+                    <option value="4">FC04 — Read Input Registers</option>
+                    <option value="5">FC05 — Write Single Coil</option>
+                    <option value="6">FC06 — Write Single Register</option>
+                    <option value="15">FC15 — Write Multiple Coils</option>
+                    <option value="16">FC16 — Write Multiple Registers</option>
+                  </select>
                 </div>
-                <span style="color:var(--muted); font-size:0.7rem; font-weight:700;">${l.timestamp}</span>
+                <div>
+                  <label class="lbl">
+                    Dirección
+                    <button @click="q.addrHex=!q.addrHex;parseAddr()" style="font-size:9px;margin-left:4px;background:none;border:none;cursor:pointer;color:#7AD400;" x-text="q.addrHex?'[HEX]':'[DEC]'"></button>
+                  </label>
+                  <input x-model="q.startRaw" @input="parseAddr()" class="fi" :placeholder="q.addrHex?'0x0000':'0'"/>
+                </div>
+                <div>
+                  <label class="lbl" x-text="isWrite(q.fc)?'Cantidad':'Registros'"></label>
+                  <input x-model.number="q.qty" type="number" min="1" max="2000" class="fi"/>
+                </div>
+                <div>
+                  <label class="lbl">Base dir.</label>
+                  <select x-model.number="q.offset" class="fs">
+                    <option value="0">0-based</option>
+                    <option value="40001">40001+</option>
+                    <option value="30001">30001+</option>
+                    <option value="10001">10001+</option>
+                    <option value="1">1+</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Write data -->
+              <template x-if="isWrite(q.fc)">
+                <div>
+                  <label class="lbl">Datos a escribir (HEX) — ej: FF 00</label>
+                  <input x-model="q.writeHex" class="fi mono" placeholder="FF 00"/>
+                </div>
+              </template>
+
+              <!-- Actions -->
+              <div style="display:flex;align-items:center;gap:8px;padding-top:6px;border-top:1px solid #e2e8e2;">
+                <button @click="sendQuery()" :disabled="q.loading" class="btn btn-lime">
+                  <svg x-show="q.loading" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                  </svg>
+                  <svg x-show="!q.loading" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/>
+                  </svg>
+                  <span x-text="q.loading?'Enviando…':'Enviar'"></span>
+                </button>
+                <button x-show="q.result||q.err" @click="q.result=null;q.err=null" class="btn btn-ghost">
+                  <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                  Limpiar
+                </button>
+                <div x-show="q.result" style="margin-left:auto;display:flex;gap:12px;font-size:11px;color:#6b7d6b;">
+                  <span>RTT: <strong class="mono" style="color:#007934;" x-text="`${q.result?.elapsed_ms??0}ms`"></strong></span>
+                  <span><strong class="mono" x-text="`${q.result?.byte_count??0}`"></strong> bytes</span>
+                </div>
+              </div>
             </div>
-            ${hex ? `<div class="hex-stream">${hex.match(/.{1,2}/g).join(' ')}</div>` : ''}
-            <div class="data-grid">${hex ? decodeReactive(hex) : ''}</div>
-        `;
-        view.prepend(entry);
-    }
+          </div>
 
-    function decodeReactive(hex) {
-        if (hex.length < 18) return '';
-        const data = hex.substring(18);
-        const endian = document.getElementById('dbEndian').value;
-        const b = []; for(let i=0; i<data.length; i+=2) b.push(parseInt(data.substr(i,2), 16));
-        
-        let html = '';
-        const floats = [];
-        for (let i = 0; i+4 <= b.length; i += 4) {
-            const s = b.slice(i, i+4);
-            let val = 0;
-            if (endian === 'dcba') val = hexToFloat((s[3] << 24) | (s[2] << 16) | (s[1] << 8) | s[0]);
-            else if (endian === 'cdab') val = hexToFloat((s[2] << 24) | (s[3] << 16) | (s[0] << 8) | s[1]);
-            else val = hexToFloat((s[0] << 24) | (s[1] << 16) | (s[2] << 8) | s[3]);
-            floats.push(val);
-        }
+          <!-- Error -->
+          <template x-if="q.err">
+            <div style="display:flex;gap:10px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;font-size:12px;color:#dc2626;" class="fade">
+              <svg style="flex-shrink:0;" width="15" height="15" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"/>
+              </svg>
+              <span class="mono" x-text="q.err"></span>
+            </div>
+          </template>
 
-        if (floats.length >= 2) {
-            html += `<div class="data-card special"><span class="d-label">FECHA (m/dd/yy)</span><span class="d-value">${parseROCDate(floats[0])}</span></div>`;
-            html += `<div class="data-card special"><span class="d-label">HORA (MILITAR)</span><span class="d-value">${parseROCTime(floats[1])}</span></div>`;
-            for(let i=2; i<floats.length; i++) {
-                html += `<div class="data-card analog"><span class="d-label">ANÁLOGO ${i-1}</span><span class="d-value">${floats[i].toFixed(4)}</span></div>`;
-            }
-        } else if (floats.length === 1) {
-            html += `<div class="data-card"><span class="d-label">Puntero/Valor</span><span class="d-value">${floats[0].toFixed(0)}</span></div>`;
-        }
-        return html;
-    }
+          <!-- Results -->
+          <template x-if="q.result && !q.err">
+            <div style="display:flex;flex-direction:column;gap:12px;" class="fade">
 
-    function parseROCDate(val) {
-        const s = Math.floor(val).toString();
-        if (s.length < 5) return s;
-        const y = s.slice(-2); const d = s.slice(-4, -2); const m = s.slice(0, s.length - 4);
-        return `${m}/${d}/${y}`;
-    }
+              <!-- ADU display -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <template x-for="(label,src) in {Request:'req_hex',Response:'res_hex'}" :key="src">
+                  <div class="card">
+                    <div class="card-head">
+                      <span class="card-title" x-text="label+' ADU'"></span>
+                      <button @click="copyHex(q.result[src])" class="btn btn-ghost btn-sm">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/>
+                        </svg>
+                        Copiar
+                      </button>
+                    </div>
+                    <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
+                      <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                        <template x-for="(b,i) in hexBytes(q.result[src])" :key="i">
+                          <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                            <div class="byte" :class="src==='req_hex'?'byte-req':'byte-res'" x-text="b"></div>
+                            <span class="mono" style="font-size:9px;color:#94a394;" x-text="i"></span>
+                          </div>
+                        </template>
+                      </div>
+                      <code class="mono" style="font-size:10px;color:#94a394;word-break:break-all;background:#f8faf8;padding:6px 8px;border-radius:3px;" x-text="fmtHex(q.result[src])"></code>
+                    </div>
+                  </div>
+                </template>
+              </div>
 
-    function parseROCTime(val) {
-        const s = Math.floor(val).toString().padStart(4, '0');
-        return `${s.slice(0,2)}:${s.slice(2,4)}`;
-    }
+              <!-- Register table -->
+              <template x-if="q.result.registers?.length">
+                <div class="card">
+                  <div class="card-head">
+                    <span class="card-title">Registros</span>
+                    <span class="mono" style="font-size:10px;color:#94a394;" x-text="`${q.result.registers.length} regs · FC0${q.result.fc}`"></span>
+                  </div>
+                  <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                      <thead>
+                        <tr style="background:#f8faf8;border-bottom:1px solid #e2e8e2;">
+                          <th style="padding:6px 12px;text-align:left;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">#</th>
+                          <th style="padding:6px 12px;text-align:left;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">Dirección</th>
+                          <th style="padding:6px 12px;text-align:left;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">HEX</th>
+                          <th style="padding:6px 12px;text-align:right;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">Dec U</th>
+                          <th style="padding:6px 12px;text-align:right;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">Dec S</th>
+                          <th style="padding:6px 12px;text-align:left;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">Binario</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <template x-for="(row,i) in q.result.registers" :key="i">
+                          <tr style="border-bottom:1px solid #f0f4f0;" :style="i%2===0?'background:#fff':'background:#f8faf8'">
+                            <td class="mono" style="padding:5px 12px;color:#94a394;font-size:11px;" x-text="row.i"></td>
+                            <td class="mono" style="padding:5px 12px;color:#007934;font-weight:600;"
+                                x-text="q.offset>0?(q.offset+row.addr):row.addr"></td>
+                            <td class="mono" style="padding:5px 12px;color:#374437;" x-text="`0x${row.hex}`"></td>
+                            <td class="mono" style="padding:5px 12px;text-align:right;" x-text="row.dec"></td>
+                            <td class="mono" style="padding:5px 12px;text-align:right;color:#1e40af;" x-text="row.sdec"></td>
+                            <td class="mono" style="padding:5px 12px;color:#94a394;font-size:10px;" x-text="row.bin"></td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </div>
+                  <!-- Float32 -->
+                  <template x-if="q.result.floats?.length">
+                    <div style="padding:10px 12px;border-top:1px solid #e2e8e2;display:flex;flex-wrap:wrap;gap:8px;">
+                      <template x-for="(f,i) in q.result.floats" :key="i">
+                        <div style="padding:6px 10px;background:#f4fce8;border:1px solid #bef264;border-radius:3px;">
+                          <div style="font-size:9px;color:#6b7d6b;font-weight:600;text-transform:uppercase;letter-spacing:.06em;" class="mono">F[<span x-text="i*2"></span>+<span x-text="i*2+1"></span>]</div>
+                          <div class="mono" style="font-size:14px;font-weight:600;color:#3a5c00;" x-text="f.toFixed(6)"></div>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </template>
 
-    function hexToFloat(hexInt) {
-        const buf = new ArrayBuffer(4); (new DataView(buf)).setUint32(0, hexInt >>> 0, false);
-        return (new DataView(buf)).getFloat32(0, false);
-    }
+              <!-- Coils -->
+              <template x-if="q.result.coils?.length">
+                <div class="card">
+                  <div class="card-head">
+                    <span class="card-title">Coils / Entradas</span>
+                    <span style="font-size:11px;color:#94a394;" x-text="`${q.result.coils.length} bits`"></span>
+                  </div>
+                  <div style="padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px;">
+                    <template x-for="(b,i) in q.result.coils" :key="i">
+                      <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                        <div style="width:32px;height:32px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;"
+                             :class="b?'coil-on':'coil-off'" x-text="b?'1':'0'"></div>
+                        <span class="mono" style="font-size:9px;color:#94a394;" x-text="q.startAddr+i"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
 
-    init();
+            </div>
+          </template>
+
+        </div>
+      </template>
+
+      <!-- ══════════ TAB: ROC EXPERT ══════════ -->
+      <template x-if="activeTab==='roc'">
+        <div style="display:flex;flex-direction:column;gap:12px;" class="fade">
+
+          <!-- ROC single query -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+
+            <!-- Pointer config -->
+            <div class="card">
+              <div class="card-head">
+                <span class="card-title">Registro Puntero</span>
+                <span style="font-size:10px;padding:2px 7px;background:#f4fce8;border:1px solid #bef264;border-radius:2px;color:#3a5c00;font-weight:700;" class="mono">PTR</span>
+              </div>
+              <div style="padding:12px;display:flex;flex-direction:column;gap:8px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                  <div>
+                    <label class="lbl">Dirección</label>
+                    <input x-model.number="roc.ptrAddr" type="number" class="fi mono"/>
+                  </div>
+                  <div>
+                    <label class="lbl">Qty</label>
+                    <input x-model.number="roc.ptrQty" type="number" min="1" max="10" class="fi mono"/>
+                  </div>
+                </div>
+                <div>
+                  <label class="lbl">Endianness</label>
+                  <select x-model="roc.ptrEndian" class="fs mono">
+                    <option value="cdab">CDAB — Word-Swap (ROC)</option>
+                    <option value="abcd">ABCD — Big-Endian</option>
+                    <option value="dcba">DCBA — Little-Endian</option>
+                    <option value="badc">BADC — Byte-Swap</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- DB config -->
+            <div class="card">
+              <div class="card-head">
+                <span class="card-title">Base de Datos Histórica</span>
+                <span style="font-size:10px;padding:2px 7px;background:#d4eddf;border:1px solid #86efac;border-radius:2px;color:#005526;font-weight:700;" class="mono">DB</span>
+              </div>
+              <div style="padding:12px;display:flex;flex-direction:column;gap:8px;">
+                <div>
+                  <label class="lbl">Dirección Base</label>
+                  <input x-model.number="roc.dbAddr" type="number" class="fi mono"/>
+                </div>
+                <div>
+                  <label class="lbl">Endianness</label>
+                  <select x-model="roc.dbEndian" class="fs mono">
+                    <option value="cdab">CDAB — Word-Swap (ROC)</option>
+                    <option value="abcd">ABCD — Big-Endian</option>
+                    <option value="dcba">DCBA — Little-Endian</option>
+                    <option value="badc">BADC — Byte-Swap</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ROC Execute -->
+          <div class="card">
+            <div class="card-head"><span class="card-title">Consulta ROC</span></div>
+            <div style="padding:12px;display:flex;flex-direction:column;gap:10px;">
+              <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                <template x-for="opt in [{v:'full',l:'Full (Ptr + Hist)'},{v:'ptr',l:'Solo Puntero'},{v:'hist',l:'Solo Histórico'}]" :key="opt.v">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;">
+                    <input type="radio" x-model="roc.mode" :value="opt.v" style="accent-color:#7AD400;width:13px;height:13px;"/>
+                    <span x-text="opt.l"></span>
+                  </label>
+                </template>
+              </div>
+
+              <template x-if="roc.mode==='hist'">
+                <div style="display:flex;align-items:flex-end;gap:10px;">
+                  <div style="width:160px;">
+                    <label class="lbl">Puntero manual</label>
+                    <input x-model.number="roc.manualPtr" type="number" class="fi mono"/>
+                  </div>
+                  <div style="padding-bottom:4px;font-size:11px;color:#6b7d6b;">
+                    addr efectiva: <strong class="mono" style="color:#007934;" x-text="Number(roc.dbAddr)+Number(roc.manualPtr||0)"></strong>
+                  </div>
+                </div>
+              </template>
+
+              <div style="display:flex;align-items:center;gap:8px;padding-top:6px;border-top:1px solid #e2e8e2;">
+                <button @click="sendROC()" :disabled="roc.loading" class="btn btn-forest">
+                  <svg x-show="roc.loading" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                  </svg>
+                  <svg x-show="!roc.loading" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z"/>
+                  </svg>
+                  <span x-text="roc.loading?'Leyendo…':'Ejecutar ROC'"></span>
+                </button>
+                <button x-show="roc.result||roc.err" @click="roc.result=null;roc.err=null" class="btn btn-ghost">Limpiar</button>
+                <span x-show="roc.result" style="margin-left:auto;font-size:11px;color:#6b7d6b;">RTT: <strong class="mono" style="color:#007934;" x-text="`${roc.result?.elapsed_ms??0}ms`"></strong></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ROC error -->
+          <template x-if="roc.err">
+            <div style="display:flex;gap:10px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;font-size:12px;color:#dc2626;" class="fade">
+              <svg style="flex-shrink:0;" width="15" height="15" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"/>
+              </svg>
+              <span class="mono" x-text="roc.err"></span>
+            </div>
+          </template>
+
+          <!-- ROC result cards -->
+          <template x-if="roc.result && !roc.err">
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;" class="fade">
+              <template x-if="roc.result.ptr_hex">
+                <div style="display:flex;align-items:stretch;gap:12px;">
+                  <div style="width:90px;background:linear-gradient(160deg,#007934,#7AD400);border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px 0;flex-shrink:0;">
+                    <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.1em;">PTR</div>
+                    <div class="mono" style="font-size:26px;font-weight:700;color:#fff;line-height:1.1;" x-text="Math.round(roc.result.ptr_value)"></div>
+                  </div>
+                  <div class="card" style="flex:1;">
+                    <div class="card-head"><span class="card-title">Bytes puntero</span></div>
+                    <div style="padding:10px 12px;display:flex;flex-direction:column;gap:6px;">
+                      <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                        <template x-for="(b,i) in hexBytes(roc.result.ptr_hex)" :key="i">
+                          <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                            <div class="byte byte-res" x-text="b"></div>
+                            <span class="mono" style="font-size:9px;color:#94a394;" x-text="i"></span>
+                          </div>
+                        </template>
+                      </div>
+                      <code class="mono" style="font-size:10px;color:#94a394;" x-text="fmtHex(roc.result.ptr_hex)"></code>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <template x-if="roc.result.db_hex">
+                <div class="card">
+                  <div class="card-head">
+                    <span class="card-title">Bloque Histórico</span>
+                    <span class="mono" style="font-size:10px;color:#94a394;" x-text="`addr=${Number(roc.dbAddr)+Math.round(roc.result.ptr_value)}`"></span>
+                  </div>
+                  <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                      <template x-for="(b,i) in hexBytes(roc.result.db_hex)" :key="i">
+                        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                          <div class="byte byte-res" x-text="b"></div>
+                          <span class="mono" style="font-size:9px;color:#94a394;" x-text="i"></span>
+                        </div>
+                      </template>
+                    </div>
+                    <template x-if="roc.result.db_floats?.length">
+                      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                        <template x-for="(f,i) in roc.result.db_floats" :key="i">
+                          <div style="padding:6px 12px;background:#f4fce8;border:1px solid #bef264;border-radius:3px;">
+                            <div style="font-size:9px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">Float32[<span x-text="i"></span>]</div>
+                            <div class="mono" style="font-size:16px;font-weight:700;color:#3a5c00;" x-text="f.toFixed(4)"></div>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <!-- ─── HISTORIAL 24H ─── -->
+          <div class="card" style="border-top:2px solid #7AD400;">
+            <div class="card-head">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <svg width="14" height="14" fill="none" stroke="#7AD400" stroke-width="1.8" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/>
+                </svg>
+                <span class="card-title">Historial 24 Horas</span>
+              </div>
+              <button @click="fetchH24()" :disabled="h24.loading" class="btn btn-lime btn-sm">
+                <svg x-show="h24.loading" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+                <svg x-show="!h24.loading" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span x-text="h24.loading?'Leyendo 24h…':'Fetch 24h'"></span>
+              </button>
+            </div>
+
+            <!-- Config strip -->
+            <div style="padding:10px 12px;border-bottom:1px solid #e2e8e2;background:#f8faf8;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+              <div>
+                <label class="lbl">Buf. Size</label>
+                <input x-model.number="h24.bufSize" type="number" class="fi fi-sm mono" style="width:80px;"/>
+              </div>
+              <div>
+                <label class="lbl">DB Qty / registro</label>
+                <input x-model.number="h24.dbQty" type="number" min="1" max="10" class="fi fi-sm mono" style="width:60px;"/>
+              </div>
+              <div style="display:flex;align-items:flex-end;gap:6px;">
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;padding-bottom:3px;">
+                  <input type="checkbox" x-model="h24.overrideHour" style="accent-color:#7AD400;"/>
+                  Hora manual
+                </label>
+                <template x-if="h24.overrideHour">
+                  <input x-model.number="h24.customHour" type="number" min="0" max="23" class="fi fi-sm mono" style="width:55px;"/>
+                </template>
+              </div>
+              <!-- Math summary when result available -->
+              <template x-if="h24.result">
+                <div class="mono" style="font-size:11px;color:#6b7d6b;margin-left:auto;">
+                  ptr=<strong style="color:#007934;" x-text="h24.result.current_ptr"></strong>
+                  &nbsp;hora=<strong style="color:#007934;" x-text="`${String(h24.result.current_hour).padStart(2,'0')}:00`"></strong>
+                  &nbsp;→&nbsp;
+                  <span style="color:#94a394;">(<span x-text="h24.result.current_ptr"></span> − <span x-text="h24.result.current_hour"></span> + <span x-text="h24.bufSize"></span>) % <span x-text="h24.bufSize"></span></span>
+                  &nbsp;=&nbsp;ptr<sub>00:00</sub>=<strong style="color:#7AD400;" x-text="h24.result.start_ptr"></strong>
+                  &nbsp;|&nbsp;<strong x-text="`${h24.result.elapsed_ms}ms`"></strong>
+                </div>
+              </template>
+            </div>
+
+            <!-- H24 error -->
+            <template x-if="h24.err">
+              <div style="padding:10px 12px;background:#fef2f2;color:#dc2626;font-size:12px;" class="mono fade" x-text="h24.err"></div>
+            </template>
+
+            <!-- Chart + table -->
+            <template x-if="h24.result && !h24.err">
+              <div class="fade">
+                <!-- Bar chart -->
+                <div style="padding:16px 12px 8px;border-bottom:1px solid #e2e8e2;">
+                  <div class="bar-chart-wrap">
+                    <template x-for="(rec, i) in h24.result.records" :key="i">
+                      <div class="bar-col">
+                        <div class="bar-tip"
+                             x-text="`${String(rec.hour).padStart(2,'0')}:00 | ptr=${rec.ptr} | ${rec.valid?rec.value.toFixed(4):'N/A'}`"></div>
+                        <div class="bar-body"
+                             :class="!rec.valid?'invalid':(rec.hour===h24.result.current_hour?'current':'')"
+                             :style="`height:${rec.valid?barH(rec.value):6}px`"></div>
+                        <div class="bar-lbl" x-text="String(rec.hour).padStart(2,'0')"></div>
+                      </div>
+                    </template>
+                  </div>
+                  <div style="display:flex;gap:12px;margin-top:6px;font-size:10px;color:#94a394;">
+                    <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:#7AD400;border-radius:1px;display:inline-block;"></span> Válido</span>
+                    <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:#007934;border-radius:1px;display:inline-block;"></span> Hora actual</span>
+                    <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:#e2e8e2;border-radius:1px;display:inline-block;"></span> Sin datos</span>
+                    <!-- min/max legend -->
+                    <span style="margin-left:auto;" class="mono" x-text="`min: ${h24MinMax().min.toFixed(3)}  max: ${h24MinMax().max.toFixed(3)}`"></span>
+                  </div>
+                </div>
+
+                <!-- Data table -->
+                <div style="overflow-x:auto;max-height:260px;overflow-y:auto;">
+                  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                    <thead style="position:sticky;top:0;z-index:1;">
+                      <tr style="background:#f8faf8;border-bottom:1px solid #e2e8e2;">
+                        <th style="padding:5px 12px;text-align:left;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">Hora</th>
+                        <th style="padding:5px 12px;text-align:left;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">Ptr</th>
+                        <th style="padding:5px 12px;text-align:left;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">HEX</th>
+                        <th style="padding:5px 12px;text-align:right;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">Float32</th>
+                        <th style="padding:5px 12px;text-align:center;font-size:10px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="(rec, i) in h24.result.records" :key="i">
+                        <tr style="border-bottom:1px solid #f0f4f0;"
+                            :style="rec.hour===h24.result.current_hour?'background:#f4fce8':(i%2===0?'background:#fff':'background:#f8faf8')">
+                          <td class="mono" style="padding:5px 12px;font-weight:600;color:#007934;" x-text="`${String(rec.hour).padStart(2,'0')}:00`"></td>
+                          <td class="mono" style="padding:5px 12px;color:#374437;" x-text="rec.ptr"></td>
+                          <td class="mono" style="padding:5px 12px;color:#94a394;font-size:11px;" x-text="rec.hex||'—'"></td>
+                          <td class="mono" style="padding:5px 12px;text-align:right;font-weight:600;" x-text="rec.valid?rec.value.toFixed(6):'—'"></td>
+                          <td style="padding:5px 12px;text-align:center;">
+                            <span x-show="rec.valid" style="font-size:10px;padding:1px 6px;background:#f4fce8;border:1px solid #bef264;border-radius:2px;color:#3a5c00;font-weight:600;">OK</span>
+                            <span x-show="!rec.valid" style="font-size:10px;padding:1px 6px;background:#f0f4f0;border:1px solid #e2e8e2;border-radius:2px;color:#94a394;font-weight:600;">ERR</span>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
+
+          </div><!-- /historial 24h -->
+
+        </div>
+      </template>
+
+    </div><!-- /scroll area -->
+  </main>
+</div>
+
+<!-- ═══════════ LOG PANEL ═══════════ -->
+<div x-show="logOpen" x-cloak class="terminal" style="flex-shrink:0;border-top:1px solid #1e2a1f;display:flex;flex-direction:column;" style2="height:180px;">
+  <div style="height:180px;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 12px;border-bottom:1px solid #1a1a1a;flex-shrink:0;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:10px;font-weight:700;color:#4d6b4d;text-transform:uppercase;letter-spacing:.1em;">Terminal</span>
+        <template x-for="lvl in ['INFO','DEBUG','ERROR']" :key="lvl">
+          <button @click="toggleFilter(lvl)"
+                  style="border:none;cursor:pointer;border-radius:2px;padding:2px 6px;font-family:'JetBrains Mono',monospace;font-size:10px;transition:opacity .1s;"
+                  :class="`log-${lvl}`" :style="logFilters.includes(lvl)?'opacity:1;background:rgba(255,255,255,.08)':'opacity:.25;background:transparent'"
+                  x-text="lvl"></button>
+        </template>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-size:10px;color:#374437;" class="mono" x-text="`${filteredLogs.length} líneas`"></span>
+        <button @click="logs=[]" style="background:none;border:none;cursor:pointer;font-size:10px;color:#374437;font-family:'JetBrains Mono',monospace;">limpiar</button>
+        <button @click="logOpen=false" style="background:none;border:none;cursor:pointer;font-size:16px;color:#374437;line-height:1;">&times;</button>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:6px 12px;display:flex;flex-direction:column;gap:1px;" x-ref="logContainer">
+      <template x-for="(m,i) in filteredLogs" :key="i">
+        <div style="display:flex;align-items:baseline;gap:10px;padding:1px 0;">
+          <span style="color:#374437;flex-shrink:0;width:90px;" class="mono" x-text="m.ts"></span>
+          <span :class="`log-${m.level}`" style="flex-shrink:0;width:46px;font-weight:600;" class="mono" x-text="m.level"></span>
+          <span style="color:#9ca3af;" x-text="m.msg"></span>
+          <span x-show="m.dur" :class="`log-${m.level}`" class="mono" style="flex-shrink:0;" x-text="m.dur"></span>
+          <span x-show="m.raw" style="color:#374437;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;" class="mono" x-text="m.raw"></span>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+<script defer src="/static/alpine.min.js"></script>
+<script>
+function app() {
+  return {
+    // ─── connection
+    conn: { ip:'192.168.1.1', port:502, slaveId:1, endian:'abcd' },
+
+    // ─── generic query
+    q: { fc:3, startRaw:'0', startAddr:0, addrHex:false, qty:10, offset:0, writeHex:'', loading:false, result:null, err:null },
+
+    // ─── ROC single
+    roc: { ptrAddr:10000, ptrEndian:'cdab', ptrQty:2, dbAddr:700, dbEndian:'cdab',
+           mode:'full', manualPtr:0, loading:false, result:null, err:null },
+
+    // ─── ROC 24h history
+    h24: { dbQty:2, bufSize:840, overrideHour:false, customHour:0, loading:false, result:null, err:null },
+
+    // ─── stations
+    stations: [],
+
+    // ─── log
+    logs: [], logOpen:true, logFilters:['INFO','DEBUG','ERROR'],
+    ws: null, wsConnected: false,
+
+    // ─── ui
+    activeTab: 'roc',
+
+    // ─── lifecycle
+    init() { this.connectWS(); this.loadStations(); },
+
+    // ─── computed
+    get filteredLogs() { return this.logs.filter(m => this.logFilters.includes(m.level)); },
+
+    // ─── ADU preview
+    aduPreview() {
+      const h2 = n => n.toString(16).padStart(2,'0').toUpperCase();
+      const h4 = n => n.toString(16).padStart(4,'0').toUpperCase();
+      return `0001 0000 0006 ${h2(this.conn.slaveId)} ${h2(this.q.fc)} ${h4(this.q.startAddr)} ${h4(this.q.qty)}`;
+    },
+
+    isWrite(fc) { return [5,6,15,16].includes(+fc); },
+
+    parseAddr() {
+      const raw = this.q.startRaw.trim().replace(/^0x/i,'');
+      this.q.startAddr = this.q.addrHex ? (parseInt(raw,16)||0) : (parseInt(raw,10)||0);
+    },
+
+    // ─── WebSocket
+    connectWS() {
+      const proto = location.protocol==='https:'?'wss':'ws';
+      try { this.ws = new WebSocket(`${proto}://${location.host}/ws`); } catch(_){ return; }
+      this.ws.onopen  = () => { this.wsConnected = true; };
+      this.ws.onclose = () => { this.wsConnected = false; setTimeout(()=>this.connectWS(), 3000); };
+      this.ws.onmessage = e => {
+        try {
+          this.logs.push(JSON.parse(e.data));
+          if(this.logs.length > 2000) this.logs.shift();
+          this.$nextTick(() => { const el=this.$refs.logContainer; if(el) el.scrollTop=el.scrollHeight; });
+        } catch(_){}
+      };
+    },
+
+    // ─── Generic query
+    async sendQuery() {
+      this.parseAddr();
+      this.q.loading=true; this.q.err=null; this.q.result=null;
+      try {
+        const r = await fetch('/api/query', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ ip:this.conn.ip, port:+this.conn.port, slave_id:+this.conn.slaveId,
+            fc:+this.q.fc, start_address:+this.q.startAddr, quantity:+this.q.qty,
+            write_data_hex:this.q.writeHex, endianness:this.conn.endian })
+        });
+        const d = await r.json();
+        if(d.error) this.q.err=d.error; else this.q.result=d;
+      } catch(e){ this.q.err=e.message; } finally { this.q.loading=false; }
+    },
+
+    // ─── ROC single
+    async sendROC() {
+      this.roc.loading=true; this.roc.err=null; this.roc.result=null;
+      try {
+        const p = { ip:this.conn.ip, port:+this.conn.port, slave_id:+this.conn.slaveId,
+          ptr_endian:this.roc.ptrEndian, ptr_addr:+this.roc.ptrAddr, ptr_qty:+this.roc.ptrQty,
+          db_endian:this.roc.dbEndian, db_addr:+this.roc.dbAddr, mode:this.roc.mode };
+        if(this.roc.mode==='hist') p.manual_ptr = +this.roc.manualPtr;
+        const r = await fetch('/api/roc', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(p) });
+        const d = await r.json();
+        if(d.error) this.roc.err=d.error; else this.roc.result=d;
+      } catch(e){ this.roc.err=e.message; } finally { this.roc.loading=false; }
+    },
+
+    // ─── ROC 24h history
+    async fetchH24() {
+      this.h24.loading=true; this.h24.err=null; this.h24.result=null;
+      try {
+        const p = { ip:this.conn.ip, port:+this.conn.port, slave_id:+this.conn.slaveId,
+          ptr_endian:this.roc.ptrEndian, ptr_addr:+this.roc.ptrAddr, ptr_qty:+this.roc.ptrQty,
+          db_endian:this.roc.dbEndian, db_addr:+this.roc.dbAddr,
+          db_qty:+this.h24.dbQty, buf_size:+this.h24.bufSize };
+        if(this.h24.overrideHour) p.current_hour = +this.h24.customHour;
+        const r = await fetch('/api/roc/history24', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(p) });
+        const d = await r.json();
+        if(d.error) this.h24.err=d.error; else this.h24.result=d;
+      } catch(e){ this.h24.err=e.message; } finally { this.h24.loading=false; }
+    },
+
+    // ─── Bar chart height (2–130px range)
+    barH(value) {
+      const mm = this.h24MinMax();
+      if(mm.max===mm.min) return 65;
+      return Math.max(2, Math.round(((value-mm.min)/(mm.max-mm.min))*128));
+    },
+
+    h24MinMax() {
+      if(!this.h24.result) return {min:0,max:0};
+      const vals = this.h24.result.records.filter(r=>r.valid).map(r=>r.value);
+      if(!vals.length) return {min:0,max:0};
+      return { min:Math.min(...vals), max:Math.max(...vals) };
+    },
+
+    // ─── Stations
+    async loadStations() {
+      try { const r=await fetch('/api/config'); const c=await r.json(); this.stations=c.stations||[]; } catch(_){}
+    },
+
+    applyStation(st) {
+      this.conn.ip=st.ip; this.conn.port=st.port; this.conn.slaveId=st.id;
+      this.roc.ptrAddr=st.pointer_address; this.roc.ptrEndian=st.pointer_endian;
+      this.roc.ptrQty=st.data_registers_count;
+      this.roc.dbAddr=st.db_address; this.roc.dbEndian=st.db_endian;
+    },
+
+    toggleFilter(lvl) {
+      this.logFilters = this.logFilters.includes(lvl)
+        ? this.logFilters.filter(f=>f!==lvl) : [...this.logFilters,lvl];
+    },
+
+    // ─── Hex helpers
+    hexBytes(h) {
+      if(!h) return [];
+      const s=h.replace(/\s/g,'');
+      const out=[];
+      for(let i=0;i<s.length;i+=2) out.push(s.substr(i,2));
+      return out;
+    },
+    fmtHex(h) { return this.hexBytes(h).join(' '); },
+    async copyHex(h) { try { await navigator.clipboard.writeText(this.fmtHex(h)); } catch(_){} },
+  };
+}
 </script>
 </body>
 </html>
