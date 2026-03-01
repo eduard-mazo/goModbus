@@ -92,15 +92,16 @@ type RegisterRow struct {
 }
 
 type QueryResponse struct {
-	FC          byte          `json:"fc"`
-	RequestHex  string        `json:"req_hex"`
-	ResponseHex string        `json:"res_hex"`
-	ElapsedMs   int64         `json:"elapsed_ms"`
-	ByteCount   int           `json:"byte_count"`
-	Registers   []RegisterRow `json:"registers,omitempty"`
-	Floats      []float32     `json:"floats,omitempty"`
-	Coils       []bool        `json:"coils,omitempty"`
-	Error       string        `json:"error,omitempty"`
+	FC          byte           `json:"fc"`
+	RequestHex  string         `json:"req_hex"`
+	ResponseHex string         `json:"res_hex"`
+	ElapsedMs   int64          `json:"elapsed_ms"`
+	ByteCount   int            `json:"byte_count"`
+	Registers   []RegisterRow  `json:"registers,omitempty"`
+	Floats      []float32      `json:"floats,omitempty"`
+	FloatModes  []Float32Modes `json:"float_modes,omitempty"` // all 4 endianness decodings
+	Coils       []bool         `json:"coils,omitempty"`
+	Error       string         `json:"error,omitempty"`
 }
 
 func queryHandler(c *gin.Context) {
@@ -157,6 +158,7 @@ func queryHandler(c *gin.Context) {
 	case FCReadHoldingRegisters, FCReadInputRegisters:
 		resp.Registers = buildRegisterTable(data, req.StartAddress)
 		resp.Floats = client.DecodeFloat32(data)
+		resp.FloatModes = DecodeAllModes(data)
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -195,13 +197,15 @@ type ROCRequest struct {
 }
 
 type ROCResponse struct {
-	PointerValue float64       `json:"ptr_value"`
-	PointerHex   string        `json:"ptr_hex"`
-	DBHex        string        `json:"db_hex"`
-	DBRegisters  []RegisterRow `json:"db_registers,omitempty"`
-	DBFloats     []float32     `json:"db_floats,omitempty"`
-	ElapsedMs    int64         `json:"elapsed_ms"`
-	Error        string        `json:"error,omitempty"`
+	PointerValue float64        `json:"ptr_value"`
+	PointerHex   string         `json:"ptr_hex"`
+	PtrModes     []Float32Modes `json:"ptr_modes,omitempty"` // all 4 endianness decodings of pointer
+	DBHex        string         `json:"db_hex"`
+	DBRegisters  []RegisterRow  `json:"db_registers,omitempty"`
+	DBFloats     []float32      `json:"db_floats,omitempty"`
+	DBModes      []Float32Modes `json:"db_modes,omitempty"` // all 4 endianness decodings of history block
+	ElapsedMs    int64          `json:"elapsed_ms"`
+	Error        string         `json:"error,omitempty"`
 }
 
 func rocHandler(c *gin.Context) {
@@ -237,6 +241,7 @@ func rocHandler(c *gin.Context) {
 			return
 		}
 		resp.PointerHex = fmt.Sprintf("%X", data)
+		resp.PtrModes = DecodeAllModes(data)
 
 		if len(data) >= 4 {
 			floats := client.DecodeFloat32(data)
@@ -265,6 +270,7 @@ func rocHandler(c *gin.Context) {
 		resp.DBHex = fmt.Sprintf("%X", data)
 		resp.DBRegisters = buildRegisterTable(data, histAddr)
 		resp.DBFloats = client.DecodeFloat32(data)
+		resp.DBModes = DecodeAllModes(data)
 		broadcastLog("INFO", "Histórico ROC leído", data, 0, &resp.PointerValue, resp.DBHex)
 	}
 

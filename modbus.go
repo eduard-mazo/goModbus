@@ -256,6 +256,29 @@ func (c *ModbusClient) DecodeInt16(data []byte) []int16 {
 	return res
 }
 
+// Float32Modes holds one float32 value decoded under all four endianness conventions.
+type Float32Modes struct {
+	ABCD float32 `json:"abcd"` // Big-Endian
+	DCBA float32 `json:"dcba"` // Little-Endian
+	CDAB float32 `json:"cdab"` // Word-Swap (ROC default)
+	BADC float32 `json:"badc"` // Byte-Swap
+}
+
+// DecodeAllModes decodes each 4-byte group in data under all four endianness modes.
+func DecodeAllModes(data []byte) []Float32Modes {
+	out := make([]Float32Modes, 0, len(data)/4)
+	for i := 0; i+4 <= len(data); i += 4 {
+		b := data[i : i+4]
+		out = append(out, Float32Modes{
+			ABCD: math.Float32frombits(uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])),
+			DCBA: math.Float32frombits(uint32(b[3])<<24 | uint32(b[2])<<16 | uint32(b[1])<<8 | uint32(b[0])),
+			CDAB: math.Float32frombits(uint32(b[2])<<24 | uint32(b[3])<<16 | uint32(b[0])<<8 | uint32(b[1])),
+			BADC: math.Float32frombits(uint32(b[1])<<24 | uint32(b[0])<<16 | uint32(b[3])<<8 | uint32(b[2])),
+		})
+	}
+	return out
+}
+
 // DecodeBits unpacks bit values from coil response bytes
 func DecodeBits(data []byte, qty uint16) []bool {
 	bits := make([]bool, qty)

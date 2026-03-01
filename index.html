@@ -386,13 +386,37 @@ tailwind.config = {
                       </tbody>
                     </table>
                   </div>
-                  <!-- Float32 -->
-                  <template x-if="q.result.floats?.length">
-                    <div style="padding:10px 12px;border-top:1px solid #e2e8e2;display:flex;flex-wrap:wrap;gap:8px;">
-                      <template x-for="(f,i) in q.result.floats" :key="i">
-                        <div style="padding:6px 10px;background:#f4fce8;border:1px solid #bef264;border-radius:3px;">
-                          <div style="font-size:9px;color:#6b7d6b;font-weight:600;text-transform:uppercase;letter-spacing:.06em;" class="mono">F[<span x-text="i*2"></span>+<span x-text="i*2+1"></span>]</div>
-                          <div class="mono" style="font-size:14px;font-weight:600;color:#3a5c00;" x-text="f.toFixed(6)"></div>
+                  <!-- Float32 + all endianness modes -->
+                  <template x-if="q.result.float_modes?.length">
+                    <div style="padding:10px 12px;border-top:1px solid #e2e8e2;display:flex;flex-direction:column;gap:8px;">
+                      <template x-for="(modes, i) in q.result.float_modes" :key="i">
+                        <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+                          <!-- index label -->
+                          <div style="padding:4px 8px;background:#f4fce8;border:1px solid #bef264;border-radius:3px;flex-shrink:0;">
+                            <div style="font-size:9px;color:#6b7d6b;font-weight:600;text-transform:uppercase;letter-spacing:.06em;" class="mono">F[<span x-text="i*2"></span>+<span x-text="i*2+1"></span>]</div>
+                            <div class="mono" style="font-size:13px;font-weight:600;color:#3a5c00;" x-text="q.result.floats[i].toFixed(4)"></div>
+                          </div>
+                          <!-- 4-mode comparison table -->
+                          <table style="border-collapse:collapse;font-size:11px;flex:1;min-width:260px;">
+                            <tbody>
+                              <template x-for="row in [
+                                {k:'abcd', label:'ABCD', desc:'Big-Endian'},
+                                {k:'dcba', label:'DCBA', desc:'Little-Endian'},
+                                {k:'cdab', label:'CDAB', desc:'Word-Swap (ROC)'},
+                                {k:'badc', label:'BADC', desc:'Byte-Swap'}
+                              ]" :key="row.k">
+                                <tr :style="row.k===conn.endian ? 'background:#f4fce8;' : ''">
+                                  <td class="mono" style="padding:3px 8px;font-weight:700;width:46px;"
+                                      :style="row.k===conn.endian ? 'color:#007934;' : 'color:#94a394;'"
+                                      x-text="row.k===conn.endian ? row.label+' ●' : row.label"></td>
+                                  <td class="mono" style="padding:3px 8px;text-align:right;width:130px;"
+                                      :style="row.k===conn.endian ? 'color:#007934;font-weight:700;' : 'color:#374437;'"
+                                      x-text="modes[row.k].toFixed(6)"></td>
+                                  <td style="padding:3px 8px;color:#94a394;font-size:10px;" x-text="row.desc"></td>
+                                </tr>
+                              </template>
+                            </tbody>
+                          </table>
                         </div>
                       </template>
                     </div>
@@ -546,8 +570,11 @@ tailwind.config = {
                     <div class="mono" style="font-size:26px;font-weight:700;color:#fff;line-height:1.1;" x-text="Math.round(roc.result.ptr_value)"></div>
                   </div>
                   <div class="card" style="flex:1;">
-                    <div class="card-head"><span class="card-title">Bytes puntero</span></div>
-                    <div style="padding:10px 12px;display:flex;flex-direction:column;gap:6px;">
+                    <div class="card-head">
+                      <span class="card-title">Bytes puntero</span>
+                      <code class="mono" style="font-size:10px;color:#94a394;" x-text="fmtHex(roc.result.ptr_hex)"></code>
+                    </div>
+                    <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
                       <div style="display:flex;gap:4px;flex-wrap:wrap;">
                         <template x-for="(b,i) in hexBytes(roc.result.ptr_hex)" :key="i">
                           <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
@@ -556,7 +583,29 @@ tailwind.config = {
                           </div>
                         </template>
                       </div>
-                      <code class="mono" style="font-size:10px;color:#94a394;" x-text="fmtHex(roc.result.ptr_hex)"></code>
+                      <!-- All 4 endianness decodings -->
+                      <template x-if="roc.result.ptr_modes?.length">
+                        <table style="border-collapse:collapse;font-size:11px;width:100%;">
+                          <tbody>
+                            <template x-for="row in [
+                              {k:'abcd', label:'ABCD', desc:'Big-Endian'},
+                              {k:'dcba', label:'DCBA', desc:'Little-Endian'},
+                              {k:'cdab', label:'CDAB', desc:'Word-Swap (ROC)'},
+                              {k:'badc', label:'BADC', desc:'Byte-Swap'}
+                            ]" :key="row.k">
+                              <tr :style="row.k===roc.ptrEndian ? 'background:#f4fce8;' : ''">
+                                <td class="mono" style="padding:3px 8px;font-weight:700;width:52px;"
+                                    :style="row.k===roc.ptrEndian ? 'color:#007934;' : 'color:#94a394;'"
+                                    x-text="row.k===roc.ptrEndian ? row.label+' ●' : row.label"></td>
+                                <td class="mono" style="padding:3px 8px;text-align:right;width:130px;"
+                                    :style="row.k===roc.ptrEndian ? 'color:#007934;font-weight:700;' : 'color:#374437;'"
+                                    x-text="roc.result.ptr_modes[0][row.k].toFixed(4)"></td>
+                                <td style="padding:3px 8px;font-size:10px;color:#94a394;" x-text="row.desc"></td>
+                              </tr>
+                            </template>
+                          </tbody>
+                        </table>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -576,12 +625,34 @@ tailwind.config = {
                         </div>
                       </template>
                     </div>
-                    <template x-if="roc.result.db_floats?.length">
-                      <div style="display:flex;flex-wrap:wrap;gap:8px;">
-                        <template x-for="(f,i) in roc.result.db_floats" :key="i">
-                          <div style="padding:6px 12px;background:#f4fce8;border:1px solid #bef264;border-radius:3px;">
-                            <div style="font-size:9px;font-weight:700;color:#6b7d6b;text-transform:uppercase;letter-spacing:.06em;">Float32[<span x-text="i"></span>]</div>
-                            <div class="mono" style="font-size:16px;font-weight:700;color:#3a5c00;" x-text="f.toFixed(4)"></div>
+                    <template x-if="roc.result.db_modes?.length">
+                      <div style="display:flex;flex-direction:column;gap:8px;">
+                        <template x-for="(modes,i) in roc.result.db_modes" :key="i">
+                          <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+                            <div style="padding:4px 8px;background:#f4fce8;border:1px solid #bef264;border-radius:3px;flex-shrink:0;">
+                              <div style="font-size:9px;color:#6b7d6b;font-weight:600;text-transform:uppercase;letter-spacing:.06em;" class="mono">F[<span x-text="i"></span>]</div>
+                              <div class="mono" style="font-size:13px;font-weight:600;color:#3a5c00;" x-text="roc.result.db_floats[i].toFixed(4)"></div>
+                            </div>
+                            <table style="border-collapse:collapse;font-size:11px;flex:1;min-width:240px;">
+                              <tbody>
+                                <template x-for="row in [
+                                  {k:'abcd', label:'ABCD', desc:'Big-Endian'},
+                                  {k:'dcba', label:'DCBA', desc:'Little-Endian'},
+                                  {k:'cdab', label:'CDAB', desc:'Word-Swap (ROC)'},
+                                  {k:'badc', label:'BADC', desc:'Byte-Swap'}
+                                ]" :key="row.k">
+                                  <tr :style="row.k===roc.dbEndian ? 'background:#f4fce8;' : ''">
+                                    <td class="mono" style="padding:3px 8px;font-weight:700;width:52px;"
+                                        :style="row.k===roc.dbEndian ? 'color:#007934;' : 'color:#94a394;'"
+                                        x-text="row.k===roc.dbEndian ? row.label+' ●' : row.label"></td>
+                                    <td class="mono" style="padding:3px 8px;text-align:right;width:130px;"
+                                        :style="row.k===roc.dbEndian ? 'color:#007934;font-weight:700;' : 'color:#374437;'"
+                                        x-text="modes[row.k].toFixed(4)"></td>
+                                    <td style="padding:3px 8px;font-size:10px;color:#94a394;" x-text="row.desc"></td>
+                                  </tr>
+                                </template>
+                              </tbody>
+                            </table>
                           </div>
                         </template>
                       </div>
