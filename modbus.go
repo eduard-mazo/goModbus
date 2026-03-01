@@ -84,6 +84,28 @@ func (c *ModbusClient) Close() {
 	}
 }
 
+// SendRaw sends raw bytes as-is and returns (responseBytes, elapsed, error).
+func (c *ModbusClient) SendRaw(frame []byte) ([]byte, time.Duration, error) {
+	if err := c.Connect(); err != nil {
+		return nil, 0, err
+	}
+	start := time.Now()
+	c.Conn.SetDeadline(time.Now().Add(c.Timeout))
+	if _, err := c.Conn.Write(frame); err != nil {
+		elapsed := time.Since(start)
+		broadcastLog("ERROR", "RAW TX: "+err.Error(), nil, elapsed, nil, "")
+		return nil, elapsed, err
+	}
+	buf := make([]byte, 512)
+	n, err := c.Conn.Read(buf)
+	elapsed := time.Since(start)
+	if err != nil {
+		broadcastLog("ERROR", "RAW RX: "+err.Error(), nil, elapsed, nil, "")
+		return nil, elapsed, err
+	}
+	return buf[:n], elapsed, nil
+}
+
 // Execute sends a Modbus request and returns (data, sentBytes, elapsed, error).
 // data is the payload after MBAP+FC+ByteCount headers.
 func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byte) ([]byte, []byte, time.Duration, error) {

@@ -256,11 +256,10 @@ func rocHandler(c *gin.Context) {
 		resp.PointerValue = *req.ManualPtr
 	}
 
-	// Step 2 – Read history block (ROC: always Qty=1 at db_addr + pointer)
+	// Step 2 – Read history block (ROC: addr=db_addr, qty=ptr_value)
 	if req.Mode == "hist" || req.Mode == "full" {
 		client.Endian = req.DBEndian
-		histAddr := req.DBAddr + uint16(resp.PointerValue)
-		data, _, elapsed, err := client.Execute(FCReadHoldingRegisters, histAddr, 1, nil)
+		data, _, elapsed, err := client.Execute(FCReadHoldingRegisters, req.DBAddr, uint16(resp.PointerValue), nil)
 		totalMs += elapsed.Milliseconds()
 		if err != nil {
 			resp.Error = "Error histórico: " + err.Error()
@@ -268,7 +267,7 @@ func rocHandler(c *gin.Context) {
 			return
 		}
 		resp.DBHex = fmt.Sprintf("%X", data)
-		resp.DBRegisters = buildRegisterTable(data, histAddr)
+		resp.DBRegisters = buildRegisterTable(data, req.DBAddr)
 		resp.DBFloats = client.DecodeFloat32(data)
 		resp.DBModes = DecodeAllModes(data)
 		broadcastLog("INFO", "Histórico ROC leído", data, 0, &resp.PointerValue, resp.DBHex)
@@ -379,7 +378,7 @@ func rocHistory24Handler(c *gin.Context) {
 	} else if req.DBQty >= 3 {
 		// Read current record and extract hour from register index 2 (month=0, day=1, hour=2)
 		client.Endian = req.DBEndian
-		recData, _, recElapsed, recErr := client.Execute(FCReadHoldingRegisters, req.DBAddr+currentPtr, req.DBQty, nil)
+		recData, _, recElapsed, recErr := client.Execute(FCReadHoldingRegisters, req.DBAddr, currentPtr, nil)
 		totalMs += recElapsed.Milliseconds()
 		if recErr == nil {
 			regs := client.DecodeUint16(recData)
@@ -412,9 +411,8 @@ func rocHistory24Handler(c *gin.Context) {
 
 	for h := 0; h < 24; h++ {
 		ptr := uint16((startPtr + h) % bufSize)
-		addr := req.DBAddr + ptr
 
-		data, _, recElapsed, recErr := client.Execute(FCReadHoldingRegisters, addr, req.DBQty, nil)
+		data, _, recElapsed, recErr := client.Execute(FCReadHoldingRegisters, req.DBAddr, ptr, nil)
 		totalMs += recElapsed.Milliseconds()
 
 		rec := HourRecord{Hour: h, Ptr: ptr}
@@ -433,5 +431,58 @@ func rocHistory24Handler(c *gin.Context) {
 
 	resp.ElapsedMs = totalMs
 	broadcastLog("INFO", fmt.Sprintf("History24 completo: %dms", totalMs), nil, 0, nil, "")
+	c.JSON(http.StatusOK, resp)
+}
+
+// ─── Raw frame handler ────────────────────────────────────────────────────────
+
+type RawRequest struct {
+	IP       string `json:"ip"`
+	Port     int    `json:"port"`
+	HexFrame string `json:"hex_frame"`
+}
+
+type RawResponse struct {
+	SentHex   string `json:"sent_hex"`
+	RecvHex   string `json:"recv_hex,omitempty"`
+	ElapsedMs int64  `json:"elapsed_ms"`
+	Error     string `json:"error,omitempty"`
+}
+
+func rawHandler(c *gin.Context) {
+	var req RawRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	clean := strings.ReplaceAll(strings.ReplaceAll(req.HexFrame, " ", ""), ":", "")
+	frame, err := hex.DecodeString(clean)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "hex inválido: " + err.Error()})
+		return
+	}
+	if len(frame) < 8 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("trama muy corta: %d bytes (mínimo 8)", len(frame))})
+		return
+	}
+
+	client := NewModbusClient(req.IP, req.Port, frame[6], BigEndian)
+	defer client.Close()
+
+	recv, elapsed, sendErr := client.SendRaw(frame)
+	resp := RawResponse{
+		SentHex:   strings.ToUpper(hex.EncodeToString(frame)),
+		ElapsedMs: elapsed.Milliseconds(),
+	}
+	if sendErr != nil {
+		resp.Error = sendErr.Error()
+	} else {
+		resp.RecvHex = strings.ToUpper(hex.EncodeToString(recv))
+	}
+
+	broadcastLog("INFO",
+		fmt.Sprintf("RAW → %s:%d  %d bytes  RTT %dms", req.IP, req.Port, len(frame), resp.ElapsedMs),
+		frame, elapsed, nil, resp.RecvHex)
 	c.JSON(http.StatusOK, resp)
 }

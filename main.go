@@ -1,13 +1,21 @@
 package main
 
 import (
+	"embed"
 	"fmt"
+	"io/fs"
 	"net/http"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+//go:embed index.html
+var indexHTML []byte
+
+//go:embed static
+var staticFS embed.FS
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
@@ -34,8 +42,11 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery(), cors.Default())
 
-	r.GET("/", func(c *gin.Context) { c.File("index.html") })
-	r.Static("/static", "./static")
+	r.GET("/", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
+	})
+	subFS, _ := fs.Sub(staticFS, "static")
+	r.StaticFS("/static", http.FS(subFS))
 	r.GET("/ws", wsHandler)
 
 	api := r.Group("/api")
@@ -44,6 +55,7 @@ func main() {
 		api.POST("/query", queryHandler)          // Generic Modbus query (FC01-FC16)
 		api.POST("/roc", rocHandler)              // ROC pointer + history workflow
 		api.POST("/roc/history24", rocHistory24Handler) // ROC 24-hour circular buffer fetch
+		api.POST("/raw", rawHandler)                    // Send raw ADU frame as-is
 	}
 
 	broadcastLog("INFO", "ROC Modbus Expert v3.0 | EPM | http://localhost:8081", nil, 0, nil, "")
