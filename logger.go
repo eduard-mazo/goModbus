@@ -30,8 +30,14 @@ var (
 
 func init() {
 	os.MkdirAll("logs", 0755)
-	logFile, _ = os.OpenFile("logs/modbus_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	fileLogger = log.New(logFile, "", log.LstdFlags|log.Lmicroseconds)
+	f, err := os.OpenFile("logs/modbus_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		logFile = f
+		fileLogger = log.New(logFile, "", log.LstdFlags|log.Lmicroseconds)
+	} else {
+		// Fall back to stderr so fileLogger.Printf never panics
+		fileLogger = log.New(os.Stderr, "[LOG] ", log.LstdFlags|log.Lmicroseconds)
+	}
 }
 
 func closeLogger() {

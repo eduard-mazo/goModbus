@@ -60,15 +60,16 @@ func NewModbusClient(host string, port int, unitID byte, endian Endianness) *Mod
 		Port:          port,
 		UnitID:        unitID,
 		Endian:        endian,
-		Timeout:       5 * time.Second,
+		Timeout:       10 * time.Second,
 		TransactionID: 1,
 	}
 }
 
 func (c *ModbusClient) Connect() error {
 	address := net.JoinHostPort(c.Host, fmt.Sprintf("%d", c.Port))
-	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+	conn, err := net.DialTimeout("tcp", address, 10*time.Second)
 	if err != nil {
+		broadcastLog("ERROR", fmt.Sprintf("TCP fallo al conectar %s: %v", address, err), nil, 0, nil, "")
 		return fmt.Errorf("conexión a %s falló: %w", address, err)
 	}
 	c.Conn = conn
@@ -102,6 +103,7 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 	broadcastLog("DEBUG", fmt.Sprintf("TX FC=0x%02X addr=%d qty=%d", fc, addr, qty), req, 0, nil, "")
 
 	if _, err := c.Conn.Write(req); err != nil {
+		broadcastLog("ERROR", fmt.Sprintf("TX error FC=0x%02X addr=%d: %v", fc, addr, err), nil, 0, nil, "")
 		return nil, req, 0, fmt.Errorf("error TX: %w", err)
 	}
 
@@ -110,12 +112,14 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 	elapsed := time.Since(start)
 
 	if err != nil {
+		broadcastLog("ERROR", fmt.Sprintf("RX error FC=0x%02X addr=%d [%dms]: %v", fc, addr, elapsed.Milliseconds(), err), nil, elapsed, nil, "")
 		return nil, req, elapsed, fmt.Errorf("error RX: %w", err)
 	}
 
 	resp := buf[:n]
 
 	if n < 8 {
+		broadcastLog("ERROR", fmt.Sprintf("Respuesta incompleta FC=0x%02X: %d bytes (mín 8)", fc, n), resp, elapsed, nil, "")
 		return nil, req, elapsed, fmt.Errorf("respuesta incompleta (%d bytes)", n)
 	}
 
