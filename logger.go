@@ -57,6 +57,15 @@ func broadcastLog(level, message string, raw []byte, duration time.Duration, pv 
 
 	fileLogger.Printf("[%s] %-5s %s | hex=%s dur=%s", msg.Timestamp, msg.Level, msg.Message, msg.RawHex, msg.Duration)
 
+	// Also print to stdout so the terminal shows the flow (DEBUG omitted to reduce noise)
+	if level != "DEBUG" {
+		if msg.Duration != "" {
+			fmt.Printf("%s %-5s %s [%s]\n", msg.Timestamp, msg.Level, msg.Message, msg.Duration)
+		} else {
+			fmt.Printf("%s %-5s %s\n", msg.Timestamp, msg.Level, msg.Message)
+		}
+	}
+
 	logMutex.Lock()
 	logBuffer = append(logBuffer, msg)
 	if len(logBuffer) > 500 {

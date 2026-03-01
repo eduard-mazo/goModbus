@@ -60,14 +60,14 @@ func NewModbusClient(host string, port int, unitID byte, endian Endianness) *Mod
 		Port:          port,
 		UnitID:        unitID,
 		Endian:        endian,
-		Timeout:       60 * time.Second,
+		Timeout:       5 * time.Second,
 		TransactionID: 1,
 	}
 }
 
 func (c *ModbusClient) Connect() error {
 	address := net.JoinHostPort(c.Host, fmt.Sprintf("%d", c.Port))
-	conn, err := net.DialTimeout("tcp", address, 10*time.Second)
+	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("conexión a %s falló: %w", address, err)
 	}

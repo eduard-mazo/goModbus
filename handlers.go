@@ -29,6 +29,20 @@ func wsHandler(c *gin.Context) {
 
 	client := &wsClientConn{conn: conn, ch: make(chan LogMessage, 128)}
 
+	// Replay history BEFORE registering the client.
+	// If we register first, a message that arrives during the replay enters both
+	// logBuffer (sent via history loop) and client.ch (sent via broadcaster) → duplicate.
+	logMutex.Lock()
+	history := make([]LogMessage, len(logBuffer))
+	copy(history, logBuffer)
+	logMutex.Unlock()
+	for _, msg := range history {
+		if err := conn.WriteJSON(msg); err != nil {
+			return
+		}
+	}
+
+	// Now register to receive live messages.
 	clientsMu.Lock()
 	logClients[client] = true
 	clientsMu.Unlock()
@@ -40,17 +54,6 @@ func wsHandler(c *gin.Context) {
 		close(client.ch)
 		conn.Close()
 	}()
-
-	// Replay buffered log history to new client
-	logMutex.Lock()
-	history := make([]LogMessage, len(logBuffer))
-	copy(history, logBuffer)
-	logMutex.Unlock()
-	for _, msg := range history {
-		if err := conn.WriteJSON(msg); err != nil {
-			return
-		}
-	}
 
 	// Stream new messages until client disconnects
 	for msg := range client.ch {
