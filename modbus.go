@@ -206,10 +206,13 @@ func buildPDU(fc byte, addr, qty uint16, data []byte) []byte {
 
 // buildMBAP builds the full Modbus TCP Application Data Unit
 func buildMBAP(txID uint16, unitID byte, pdu []byte) []byte {
-	req := make([]byte, 6+len(pdu))
+	// ADU = MBAP(6) + UnitID(1) + PDU → total 7+len(pdu) bytes
+	// MBAP(6) alone does NOT include the Unit ID byte; using 6+len(pdu) left
+	// only 4 destination bytes for a 5-byte PDU, silently dropping the last byte.
+	req := make([]byte, 7+len(pdu))
 	binary.BigEndian.PutUint16(req[0:], txID)               // Transaction ID
 	binary.BigEndian.PutUint16(req[2:], 0)                  // Protocol ID = 0
-	binary.BigEndian.PutUint16(req[4:], uint16(1+len(pdu))) // Length
+	binary.BigEndian.PutUint16(req[4:], uint16(1+len(pdu))) // Length = UnitID(1) + PDU
 	req[6] = unitID
 	copy(req[7:], pdu)
 	return req
