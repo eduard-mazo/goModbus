@@ -283,10 +283,25 @@ func rocHandler(c *gin.Context) {
 //
 // Circular buffer math (size = buf_size, default 840):
 //
-//	startPtr = (currentPtr - currentHour + bufSize) % bufSize   → pointer for 00:00
-//	ptr[h]   = (startPtr + h) % bufSize                         → pointer for hour h
+// Goal: fetch the 24 complete hours of the PREVIOUS calendar day (00:00–23:00 yesterday).
 //
-// Example: ptr=1, hour=02:00 → startPtr=(1-2+840)%840=839 → ptr[0]=839, ptr[1]=840%840=0, ptr[2]=1
+//	startPtr = (currentPtr − currentHour − 24 + 2·bufSize) % bufSize  → ptr for 00:00 yesterday
+//	ptr[h]   = (startPtr + h) % bufSize                               → ptr for hour h (0..23)
+//
+// Derivation:
+//   currentPtr points to the current hour of today.
+//   Going back currentHour steps reaches 00:00 today.
+//   Going back another 24 steps reaches 00:00 yesterday.
+//   Adding 2·bufSize keeps the dividend positive for any currentPtr/currentHour values.
+//
+// Example: ptr=240, hour=11 → startPtr=(240−11−24+1680)%840=1885%840=205
+//   h=0 → ptr=205 (00:00 yesterday), h=23 → ptr=228 (23:00 yesterday)
+//
+// ROC record layout (bytes 0-based):
+//   [0-1]  uint16 date  (register 0) — metadata, not decoded as float
+//   [2-3]  uint16 hour  (register 1) — metadata, not decoded as float
+//   [4-7]  float32 measurement 1 (registers 2-3, encoded in db_endian)
+//   [8-11] float32 measurement 2 (registers 4-5), …
 type History24Request struct {
 	IP          string     `json:"ip"`
 	Port        int        `json:"port"`
@@ -302,11 +317,12 @@ type History24Request struct {
 }
 
 type HourRecord struct {
-	Hour  int     `json:"hour"`
-	Ptr   uint16  `json:"ptr"`
-	Hex   string  `json:"hex"`
-	Value float32 `json:"value"`
-	Valid bool    `json:"valid"`
+	Hour  int            `json:"hour"`
+	Ptr   uint16         `json:"ptr"`
+	Hex   string         `json:"hex"`
+	Value float32        `json:"value"`                  // first measurement in db_endian (bytes 4+)
+	Modes []Float32Modes `json:"modes,omitempty"`        // all 4 endianness decodings for bytes 4+ (skips date/hour registers)
+	Valid bool           `json:"valid"`
 }
 
 type History24Response struct {
@@ -395,14 +411,16 @@ func rocHistory24Handler(c *gin.Context) {
 	}
 	resp.CurrentHour = currentHour
 
-	// Step 3 – Calculate pointer for 00:00 of current day
-	//   startPtr = (currentPtr - currentHour + BufSize) % BufSize
+	// Step 3 – Calculate pointer for 00:00 of PREVIOUS day.
+	//   Back currentHour steps = 00:00 today; back another 24 = 00:00 yesterday.
+	//   2·bufSize keeps the dividend positive for any valid currentPtr/currentHour.
 	bufSize := int(req.BufSize)
-	startPtr := (int(currentPtr) - currentHour + bufSize) % bufSize
+	startPtr := (int(currentPtr) - currentHour - 24 + 2*bufSize) % bufSize
 	resp.StartPtr = uint16(startPtr)
 
 	broadcastLog("INFO",
-		fmt.Sprintf("History24: ptr=%d hora=%d → ptr_00:00=%d (buf=%d)", currentPtr, currentHour, startPtr, bufSize),
+		fmt.Sprintf("History24: ptr=%d hora=%d → ptr_ayer_00:00=%d  fórmula=(%d−%d−24+%d)%%%d",
+			currentPtr, currentHour, startPtr, currentPtr, currentHour, 2*bufSize, bufSize),
 		nil, 0, nil, "")
 
 	// Step 4 – Fetch 24 hourly records
@@ -421,7 +439,13 @@ func rocHistory24Handler(c *gin.Context) {
 		} else {
 			rec.Valid = true
 			rec.Hex = fmt.Sprintf("%X", data)
-			floats := client.DecodeFloat32(data)
+			// Skip bytes 0-3 (registers 0-1: date/hour metadata) before decoding measurements.
+			payload := data
+			if len(data) >= 4 {
+				payload = data[4:]
+			}
+			rec.Modes = DecodeAllModes(payload)
+			floats := client.DecodeFloat32(payload)
 			if len(floats) > 0 {
 				rec.Value = floats[0]
 			}

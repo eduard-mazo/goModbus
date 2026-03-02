@@ -620,9 +620,12 @@ tailwind.config = {
                 <div class="card">
                   <div class="card-head">
                     <span class="card-title">Bloque Histórico</span>
-                    <span class="mono" style="font-size:10px;color:#94a394;" x-text="`addr=${Number(roc.dbAddr)+Math.round(roc.result.ptr_value)}`"></span>
+                    <!-- addr=db_addr, qty=ptr_value (ROC protocol) -->
+                    <span class="mono" style="font-size:10px;color:#94a394;"
+                          x-text="`addr=${roc.dbAddr}  qty=${Math.round(roc.result.ptr_value)}`"></span>
                   </div>
                   <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
+                    <!-- Raw byte boxes -->
                     <div style="display:flex;gap:4px;flex-wrap:wrap;">
                       <template x-for="(b,i) in hexBytes(roc.result.db_hex)" :key="i">
                         <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
@@ -631,14 +634,26 @@ tailwind.config = {
                         </div>
                       </template>
                     </div>
+
                     <template x-if="roc.result.db_modes?.length">
                       <div style="display:flex;flex-direction:column;gap:8px;">
                         <template x-for="(modes,i) in roc.result.db_modes" :key="i">
                           <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;">
-                            <div style="padding:4px 8px;background:#f4fce8;border:1px solid #bef264;border-radius:3px;flex-shrink:0;">
-                              <div style="font-size:9px;color:#6b7d6b;font-weight:600;text-transform:uppercase;letter-spacing:.06em;" class="mono">F[<span x-text="i"></span>]</div>
-                              <div class="mono" style="font-size:13px;font-weight:600;color:#3a5c00;" x-text="roc.result.db_floats[i].toFixed(4)"></div>
+
+                            <!-- Index badge: i=0 → Fecha, i=1 → Hora, i≥2 → F[i-1] measurement -->
+                            <div :style="i<2
+                                ? 'padding:4px 8px;background:#f0f4ff;border:1px solid #c7d2fe;border-radius:3px;flex-shrink:0;'
+                                : 'padding:4px 8px;background:#f4fce8;border:1px solid #bef264;border-radius:3px;flex-shrink:0;'">
+                              <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;" class="mono"
+                                   :style="i<2?'color:#6b7d9b;':'color:#6b7d6b;'"
+                                   x-text="i===0?'Fecha':i===1?'Hora':`F[${i-1}]`"></div>
+                              <!-- Primary value: reactive to roc.dbEndian (no re-query needed) -->
+                              <div class="mono" style="font-size:13px;font-weight:600;"
+                                   :style="i<2?'color:#3a3c7a;':'color:#3a5c00;'"
+                                   x-text="modes[roc.dbEndian].toFixed(4)"></div>
                             </div>
+
+                            <!-- All 4 endianness rows, selected row highlighted reactively -->
                             <table style="border-collapse:collapse;font-size:11px;flex:1;min-width:240px;">
                               <tbody>
                                 <template x-for="row in [
@@ -659,6 +674,7 @@ tailwind.config = {
                                 </template>
                               </tbody>
                             </table>
+
                           </div>
                         </template>
                       </div>
@@ -714,8 +730,8 @@ tailwind.config = {
                   ptr=<strong style="color:#007934;" x-text="h24.result.current_ptr"></strong>
                   &nbsp;hora=<strong style="color:#007934;" x-text="`${String(h24.result.current_hour).padStart(2,'0')}:00`"></strong>
                   &nbsp;→&nbsp;
-                  <span style="color:#94a394;">(<span x-text="h24.result.current_ptr"></span> − <span x-text="h24.result.current_hour"></span> + <span x-text="h24.bufSize"></span>) % <span x-text="h24.bufSize"></span></span>
-                  &nbsp;=&nbsp;ptr<sub>00:00</sub>=<strong style="color:#7AD400;" x-text="h24.result.start_ptr"></strong>
+                  <span style="color:#94a394;">(<span x-text="h24.result.current_ptr"></span> − <span x-text="h24.result.current_hour"></span> − 24 + 2·<span x-text="h24.bufSize"></span>) % <span x-text="h24.bufSize"></span></span>
+                  &nbsp;=&nbsp;ptr<sub style="font-size:8px;">ayer 00:00</sub>=<strong style="color:#7AD400;" x-text="h24.result.start_ptr"></strong>
                   &nbsp;|&nbsp;<strong x-text="`${h24.result.elapsed_ms}ms`"></strong>
                 </div>
               </template>
@@ -735,10 +751,10 @@ tailwind.config = {
                     <template x-for="(rec, i) in h24.result.records" :key="i">
                       <div class="bar-col">
                         <div class="bar-tip"
-                             x-text="`${String(rec.hour).padStart(2,'0')}:00 | ptr=${rec.ptr} | ${rec.valid?rec.value.toFixed(4):'N/A'}`"></div>
+                             x-text="`${String(rec.hour).padStart(2,'0')}:00 | ptr=${rec.ptr} | ${h24Val(rec)!=null?h24Val(rec).toFixed(4):'N/A'}`"></div>
                         <div class="bar-body"
                              :class="!rec.valid?'invalid':(rec.hour===h24.result.current_hour?'current':'')"
-                             :style="`height:${rec.valid?barH(rec.value):6}px`"></div>
+                             :style="`height:${rec.valid?barH(h24Val(rec)):6}px`"></div>
                         <div class="bar-lbl" x-text="String(rec.hour).padStart(2,'0')"></div>
                       </div>
                     </template>
@@ -771,7 +787,7 @@ tailwind.config = {
                           <td class="mono" style="padding:5px 12px;font-weight:600;color:#007934;" x-text="`${String(rec.hour).padStart(2,'0')}:00`"></td>
                           <td class="mono" style="padding:5px 12px;color:#374437;" x-text="rec.ptr"></td>
                           <td class="mono" style="padding:5px 12px;color:#94a394;font-size:11px;" x-text="rec.hex||'—'"></td>
-                          <td class="mono" style="padding:5px 12px;text-align:right;font-weight:600;" x-text="rec.valid?rec.value.toFixed(6):'—'"></td>
+                          <td class="mono" style="padding:5px 12px;text-align:right;font-weight:600;" x-text="h24Val(rec)!=null?h24Val(rec).toFixed(6):'—'"></td>
                           <td style="padding:5px 12px;text-align:center;">
                             <span x-show="rec.valid" style="font-size:10px;padding:1px 6px;background:#f4fce8;border:1px solid #bef264;border-radius:2px;color:#3a5c00;font-weight:600;">OK</span>
                             <span x-show="!rec.valid" style="font-size:10px;padding:1px 6px;background:#f0f4f0;border:1px solid #e2e8e2;border-radius:2px;color:#94a394;font-weight:600;">ERR</span>
@@ -1042,8 +1058,19 @@ function app() {
       } catch(e){ this.h24.err=e.message; } finally { this.h24.loading=false; }
     },
 
-    // ─── Bar chart height (2–130px range)
+    // ─── 24h record value: pick the correct float from rec.modes using the current
+    //     db_endian setting, falling back to the pre-decoded rec.value.
+    //     rec.modes[0] = first measurement (bytes 4-7 of the ROC record, i.e. skipping
+    //     the date/hour metadata stored in registers 0-1).
+    h24Val(rec) {
+      if (!rec || !rec.valid) return null;
+      if (rec.modes && rec.modes.length > 0) return rec.modes[0][this.roc.dbEndian];
+      return rec.value;
+    },
+
+    // ─── Bar chart height (2–128px range)
     barH(value) {
+      if (value == null) return 2;
       const mm = this.h24MinMax();
       if(mm.max===mm.min) return 65;
       return Math.max(2, Math.round(((value-mm.min)/(mm.max-mm.min))*128));
@@ -1051,7 +1078,7 @@ function app() {
 
     h24MinMax() {
       if(!this.h24.result) return {min:0,max:0};
-      const vals = this.h24.result.records.filter(r=>r.valid).map(r=>r.value);
+      const vals = this.h24.result.records.map(r=>this.h24Val(r)).filter(v=>v!=null);
       if(!vals.length) return {min:0,max:0};
       return { min:Math.min(...vals), max:Math.max(...vals) };
     },
