@@ -25,11 +25,15 @@ var upgrader = websocket.Upgrader{
 func main() {
 	defer closeLogger()
 
-	// Start WebSocket broadcaster: fans out logChan messages to all connected clients
+	// Start WebSocket broadcaster: fans out logChan messages to connected clients.
+	// Session-scoped messages (msg.SID != "") are delivered only to the owning client.
 	go func() {
 		for msg := range logChan {
 			clientsMu.Lock()
 			for client := range logClients {
+				if msg.SID != "" && client.sessionID != msg.SID {
+					continue // route session messages only to their owner
+				}
 				select {
 				case client.ch <- msg:
 				default: // drop if client buffer full
@@ -79,7 +83,7 @@ func main() {
 		api.POST("/raw", rawHandler)                    // Send raw ADU frame as-is
 	}
 
-	broadcastLog("INFO", "ROC Modbus Expert v3.0 | EPM | http://localhost:8080", nil, 0, nil, "")
-	fmt.Println("ROC Modbus Expert v3.0 | EPM | http://localhost:8080")
-	r.Run(":8080")
+	broadcastLog("INFO", "ROC Modbus Expert v3.0 | EPM | http://localhost:8083", nil, 0, nil, "")
+	fmt.Println("ROC Modbus Expert v3.0 | EPM | http://localhost:8083")
+	r.Run(":8083")
 }

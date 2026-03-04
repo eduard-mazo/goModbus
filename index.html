@@ -606,8 +606,22 @@
             </div>
           </template>
           <template x-for="(st,i) in stations" :key="i">
-            <div class="station-item" @click="applyStation(st)">
-              <div class="station-name" x-text="st.name"></div>
+            <div
+              class="station-item"
+              @click="applyStation(st)"
+              :style="activeStation===st.name
+                ? 'border-color:#7ad400;border-left:3px solid #7ad400;background:#0a1a0b;'
+                : ''"
+            >
+              <div style="display:flex;align-items:center;gap:6px;">
+                <div
+                  style="width:6px;height:6px;border-radius:50%;flex-shrink:0;"
+                  :style="activeStation===st.name
+                    ? 'background:#7ad400;box-shadow:0 0 5px #7ad400;'
+                    : 'background:#2a3a2a;'"
+                ></div>
+                <div class="station-name" x-text="st.name"></div>
+              </div>
               <div
                 class="station-sub"
                 x-text="`${st.ip}:${st.port}  ID ${st.id}`"
@@ -1817,7 +1831,7 @@
                                   "
                                   class="mono"
                                   :style="i<2?'color:#64748b;':'color:#6b7d6b;'"
-                                  x-text="i===0?'Fecha':i===1?'Hora':`Medición F[${i-1}]`"
+                                  x-text="['Date','Time','Flow Min','Raw Pulses','Pf PSI','Tf DEG F','Multiplier','Uncorr Vol MCF','Vol Accum MCF','Energy MMBTU'][i] || `F[${i}]`"
                                 ></div>
                                 <div
                                   class="mono"
@@ -1836,8 +1850,8 @@
                 </div>
               </template>
 
-              <!-- ─── HISTORIAL 24H ─── -->
-              <div class="card" style="border-top: 2px solid #7ad400">
+              <!-- ─── HISTORIAL 24H ─── (integrado en Sincronización) -->
+              <div class="card" style="border-top: 2px solid #7ad400; display:none;">
                 <div class="card-head">
                   <div style="display: flex; align-items: center; gap: 8px">
                     <svg
@@ -2649,95 +2663,146 @@
                 </div>
               </div>
 
-              <template x-if="sync.result">
-                <div style="display: flex; flex-direction: column; gap: 12px;">
-                    <!-- Results header with station selector -->
-                    <div class="card">
-                        <div class="card-head">
-                            <span class="card-title">Resumen de Resultados</span>
-                            <span class="mono" style="font-size: 11px; color: #94a394;" x-text="`Tiempo global: ${sync.result.elapsed_ms}ms`"></span>
-                        </div>
-                        <div style="padding: 10px; display: flex; gap: 8px; overflow-x: auto;">
-                            <template x-for="(res, idx) in sync.result.results" :key="idx">
-                                <button 
-                                    @click="sync.selectedIdx = idx"
-                                    class="btn"
-                                    :class="sync.selectedIdx === idx ? 'btn-forest' : 'btn-ghost'"
-                                    style="white-space: nowrap; font-size: 11px; padding: 4px 10px; display: flex; align-items: center; gap: 6px;"
-                                >
-                                    <span x-text="res.station"></span>
-                                    <span 
-                                        x-show="res.records.filter(r=>!r.valid).length > 0"
-                                        style="font-size: 9px; padding: 1px 5px; background: #ef4444; color: white; border-radius: 10px;"
-                                        x-text="res.records.filter(r=>!r.valid).length"
-                                    ></span>
-                                </button>
+              <!-- ── Progress cards (shown while downloading) ── -->
+              <template x-if="sync.stationsExpected.length > 0">
+                <div class="card">
+                  <div class="card-head">
+                    <span class="card-title">Progreso de Descarga</span>
+                    <span class="mono" style="font-size:10px;color:#94a394;"
+                      x-text="`${Object.keys(sync.stationResults).length} / ${sync.stationsExpected.length} completadas`"></span>
+                  </div>
+                  <div style="padding:12px;display:flex;flex-direction:column;gap:10px;">
+                    <template x-for="name in sync.stationsExpected" :key="name">
+                      <div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                          <span class="mono" style="font-size:11px;font-weight:600;color:#374437;" x-text="name"></span>
+                          <div style="display:flex;align-items:center;gap:10px;">
+                            <template x-if="sync.stationResults[name]">
+                              <span style="font-size:10px;color:#007934;font-weight:700;">Completo ✓</span>
                             </template>
+                            <span class="mono" style="font-size:10px;color:#6b7d6b;"
+                              x-text="`${sync.progress[name]?.done||0}/840`"></span>
+                            <span class="mono" style="font-size:11px;font-weight:700;"
+                              :style="`color:${sync.stationResults[name]?'#007934':'#7ad400'}`"
+                              x-text="`${sync.progress[name]?.pct||0}%`"></span>
+                          </div>
                         </div>
-                    </div>
-
-                    <template x-if="sync.selectedIdx !== null">
-                        <div x-data="{ 
-                            get st() { return sync.result.results[sync.selectedIdx]; },
-                            get pendingCount() { return this.st.records.filter(r=>!r.valid).length; },
-                            filter: '',
-                            get filteredRecords() {
-                                if(!this.filter) return this.st.records;
-                                return this.st.records.filter(r => 
-                                    r.ptr.toString().includes(this.filter) || 
-                                    (r.hex && r.hex.toLowerCase().includes(this.filter.toLowerCase())) ||
-                                    (r.value != null && r.value.toString().includes(this.filter))
-                                );
-                            }
-                        }" style="display: flex; flex-direction: column; gap: 12px;">
-                            
-                            <div class="card">
-                                <div class="card-head" style="background: #fcfdfc;">
-                                    <div style="display: flex; align-items: center; gap: 10px;">
-                                        <span class="card-title" x-text="st.station"></span>
-                                        <span class="mono" style="font-size: 11px; color: #94a394;" x-text="st.ip"></span>
-                                    </div>
-                                    <div style="display: flex; gap: 10px; align-items: center;">
-                                        <div x-show="pendingCount > 0" style="display: flex; align-items: center; gap: 8px;">
-                                            <span style="font-size: 11px; color: #ef4444; font-weight: 700;" x-text="`${pendingCount} registros fallidos`"></span>
-                                            <button @click="retryStation(sync.selectedIdx)" :disabled="sync.loading" class="btn btn-ghost" style="color: #ef4444; border-color: #ef4444; font-size: 10px; padding: 4px 10px;">
-                                                <svg x-show="sync.loading" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin" style="margin-right: 4px;"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-                                                Reintentar Pendientes
-                                            </button>
-                                        </div>
-                                        <input type="text" x-model="filter" placeholder="Filtrar..." class="fi mono" style="width: 150px; height: 26px; font-size: 11px;">
-                                    </div>
-                                </div>
-                                <div style="max-height: 500px; overflow-y: auto;">
-                                    <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
-                                        <thead style="position: sticky; top: 0; background: #f8faf8; box-shadow: 0 1px 0 #e2e8e2; z-index: 10;">
-                                            <tr>
-                                                <th style="padding: 6px 12px; text-align: left; color: #6b7d6b; text-transform: uppercase;">Ptr</th>
-                                                <th style="padding: 6px 12px; text-align: left; color: #6b7d6b; text-transform: uppercase;">Hex</th>
-                                                <th style="padding: 6px 12px; text-align: right; color: #6b7d6b; text-transform: uppercase;">Valor</th>
-                                                <th style="padding: 6px 12px; text-align: center; color: #6b7d6b; text-transform: uppercase;">Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <template x-for="rec in filteredRecords" :key="rec.ptr">
-                                                <tr style="border-bottom: 1px solid #f1f5f1;" :style="rec.valid ? '' : 'background: #fef2f2;'">
-                                                    <td class="mono" style="padding: 4px 12px; color: #94a394;" x-text="rec.ptr"></td>
-                                                    <td class="mono" style="padding: 4px 12px; color: #374437;" x-text="rec.hex ? fmtHex(rec.hex) : '-'"></td>
-                                                    <td class="mono" style="padding: 4px 12px; text-align: right; font-weight: 600; color: #007934;">
-                                                        <span x-text="rec.valid ? rec.value.toFixed(4) : '-'"></span>
-                                                    </td>
-                                                    <td style="padding: 4px 12px; text-align: center;">
-                                                        <span x-show="rec.valid" style="color: #22c55e;">●</span>
-                                                        <span x-show="!rec.valid" style="color: #ef4444; font-size: 9px; font-weight: 700;">ERR</span>
-                                                    </td>
-                                                </tr>
-                                            </template>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
+                        <div style="height:5px;background:#e2e8e2;border-radius:3px;overflow:hidden;">
+                          <div style="height:100%;border-radius:3px;transition:width 0.25s ease;"
+                            :style="`width:${sync.progress[name]?.pct||0}%;background:${sync.stationResults[name]?'#007934':'#7AD400'};`">
+                          </div>
                         </div>
+                      </div>
                     </template>
+                  </div>
+                </div>
+              </template>
+
+              <!-- ── Results: area chart + table ── -->
+              <template x-if="Object.keys(sync.stationResults).length > 0">
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                  <!-- Signal + endianness selectors + station tabs -->
+                  <div class="card">
+                    <div class="card-head">
+                      <span class="card-title">Análisis de Señales — 840 Registros</span>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <select x-model.number="sync.chart.sig" class="fs mono" style="width:190px;height:26px;font-size:11px;">
+                          <template x-for="(n,i) in ['Flow Min','Raw Pulses','Pf PSI','Tf DEG F','Multiplier','Uncorr Vol MCF','Vol Accum MCF','Energy MMBTU']" :key="i">
+                            <option :value="i" x-text="`[${i}] ${n}`"></option>
+                          </template>
+                        </select>
+                        <select x-model="roc.dbEndian" class="fs mono" style="width:130px;height:26px;font-size:11px;">
+                          <option value="cdab">CDAB — ROC</option>
+                          <option value="abcd">ABCD</option>
+                          <option value="dcba">DCBA</option>
+                          <option value="badc">BADC</option>
+                        </select>
+                      </div>
+                    </div>
+                    <!-- Station tabs -->
+                    <div style="padding:8px 12px;border-bottom:1px solid #e2e8e2;display:flex;gap:6px;flex-wrap:wrap;background:#f8faf8;">
+                      <template x-for="name in Object.keys(sync.stationResults)" :key="name">
+                        <button @click="sync.selectedIdx=name" class="btn btn-sm"
+                          :class="sync.selectedIdx===name?'btn-forest':'btn-ghost'"
+                          x-text="name"></button>
+                      </template>
+                    </div>
+                    <!-- SVG Area Chart -->
+                    <template x-if="sync.selectedIdx && sync.stationResults[sync.selectedIdx]">
+                      <div style="padding:12px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                          <span class="mono" style="font-size:11px;font-weight:600;" :style="`color:${sigColor(sync.chart.sig)}`"
+                            x-text="sigName(sync.chart.sig)"></span>
+                          <span class="mono" style="font-size:10px;color:#94a394;"
+                            x-text="`endian: ${roc.dbEndian.toUpperCase()} · ${sync.selectedIdx}`"></span>
+                        </div>
+                        <svg viewBox="0 0 840 180" style="width:100%;height:160px;display:block;border-radius:3px;background:#f8faf8;"
+                          preserveAspectRatio="none">
+                          <line x1="0" y1="1" x2="840" y2="1" stroke="#e2e8e2" stroke-width="1"/>
+                          <line x1="0" y1="90" x2="840" y2="90" stroke="#e2e8e2" stroke-width="0.5"/>
+                          <line x1="0" y1="179" x2="840" y2="179" stroke="#e2e8e2" stroke-width="1"/>
+                          <path
+                            :d="areaPath(sync.chart.sig, sync.stationResults[sync.selectedIdx], roc.dbEndian)"
+                            :fill="sigColor(sync.chart.sig)+'28'"
+                            :stroke="sigColor(sync.chart.sig)"
+                            stroke-width="1.5"
+                          />
+                        </svg>
+                        <!-- Stats row -->
+                        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;">
+                          <template x-for="item in [
+                            {lbl:'Mínimo', val:sigStats(sync.chart.sig).min},
+                            {lbl:'Máximo', val:sigStats(sync.chart.sig).max},
+                            {lbl:'Promedio', val:sigStats(sync.chart.sig).avg},
+                            {lbl:'Registros OK', val:sigStats(sync.chart.sig).ok+\'/840\'}
+                          ]" :key="item.lbl">
+                            <div style="padding:8px;background:#f8faf8;border:1px solid #e2e8e2;border-radius:3px;text-align:center;">
+                              <div style="font-size:9px;color:#6b7d6b;text-transform:uppercase;letter-spacing:0.06em;" x-text="item.lbl"></div>
+                              <div class="mono" style="font-size:13px;font-weight:700;color:#007934;margin-top:2px;" x-text="item.val"></div>
+                            </div>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+
+                  <!-- Record table for selected station -->
+                  <template x-if="sync.selectedIdx && sync.stationResults[sync.selectedIdx]">
+                    <div class="card">
+                      <div class="card-head">
+                        <span class="card-title" x-text="`Registros · ${sync.selectedIdx}`"></span>
+                        <span class="mono" style="font-size:10px;color:#ef4444;"
+                          x-text="`${sync.stationResults[sync.selectedIdx].filter(r=>!r.valid).length} errores`"></span>
+                      </div>
+                      <div style="max-height:300px;overflow-y:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+                          <thead style="position:sticky;top:0;background:#f8faf8;box-shadow:0 1px 0 #e2e8e2;z-index:10;">
+                            <tr>
+                              <th style="padding:5px 10px;text-align:left;color:#6b7d6b;font-size:10px;text-transform:uppercase;">Ptr</th>
+                              <th style="padding:5px 10px;text-align:right;color:#6b7d6b;font-size:10px;text-transform:uppercase;"
+                                x-text="sigName(sync.chart.sig)"></th>
+                              <th style="padding:5px 10px;text-align:center;color:#6b7d6b;font-size:10px;text-transform:uppercase;">OK</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <template x-for="rec in sync.stationResults[sync.selectedIdx]" :key="rec.ptr">
+                              <tr style="border-bottom:1px solid #f1f5f1;"
+                                :style="rec.valid?'':(i%2===0?'background:#fff7f7':'background:#fff7f7')">
+                                <td class="mono" style="padding:3px 10px;color:#94a394;" x-text="rec.ptr"></td>
+                                <td class="mono" style="padding:3px 10px;text-align:right;font-weight:600;color:#007934;">
+                                  <span x-text="(rec.valid&&rec.modes&&rec.modes[sync.chart.sig])?rec.modes[sync.chart.sig][roc.dbEndian].toFixed(4):'—'"></span>
+                                </td>
+                                <td style="padding:3px 10px;text-align:center;">
+                                  <span x-show="rec.valid" style="color:#22c55e;">●</span>
+                                  <span x-show="!rec.valid" style="color:#ef4444;font-size:9px;font-weight:700;">ERR</span>
+                                </td>
+                              </tr>
+                            </template>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </template>
                 </div>
               </template>
             </div>
@@ -2957,7 +3022,19 @@
             result: null,
             selectedIdx: null,
             selectedNames: [],
+            progress: {},         // { stationName: SyncProgress }
+            stationResults: {},   // { stationName: HourRecord[840] }
+            stationsExpected: [], // names being downloaded
+            chart: { sig: 2, normalize: false }, // sig 2 = Flow Minutes (Modes[0])
           },
+
+          // ─── session
+          sessionId: (() => {
+            let id = localStorage.getItem("rocSessionId");
+            if (!id) { id = crypto.randomUUID(); localStorage.setItem("rocSessionId", id); }
+            return id;
+          })(),
+          activeStation: null,
 
           // ─── ui
           activeTab: "roc",
@@ -3001,6 +3078,8 @@
             }
             this.ws.onopen = () => {
               this.wsConnected = true;
+              // Bind this connection to our session so progress events are private
+              this.ws.send(JSON.stringify({ type: "register", sid: this.sessionId }));
             };
             this.ws.onclose = () => {
               this.wsConnected = false;
@@ -3008,7 +3087,13 @@
             };
             this.ws.onmessage = (e) => {
               try {
-                this.logs.push(JSON.parse(e.data));
+                const msg = JSON.parse(e.data);
+                if (msg.progress) {
+                  // Route sync progress to dedicated handler — don't add to log
+                  this.handleSyncProgress(msg.progress);
+                  return;
+                }
+                this.logs.push(msg);
                 if (this.logs.length > 2000) this.logs.shift();
                 this.$nextTick(() => {
                   const el = this.$refs.logContainer;
@@ -3119,38 +3204,131 @@
           async startFullSync() {
             this.sync.loading = true;
             this.sync.result = null;
-            this.sync.selectedIdx = 0;
+            this.sync.progress = {};
+            this.sync.stationResults = {};
+            this.sync.stationsExpected = [...this.sync.selectedNames];
+            this.sync.selectedIdx = null;
+            // Pre-populate progress slots so cards appear immediately
+            this.sync.selectedNames.forEach(n => {
+              this.sync.progress[n] = { station: n, done: 0, total: 840, pct: 0 };
+            });
             try {
-              const r = await fetch("/api/stations/full-sync", {
+              await fetch("/api/stations/full-sync", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Session-ID": this.sessionId,
+                },
                 body: JSON.stringify({ stations: this.sync.selectedNames }),
               });
-              const d = await r.json();
-              this.sync.result = d;
+              // Response is {status:"started"} — actual progress/results arrive via WS
             } catch (e) {
               console.error(e);
-            } finally {
               this.sync.loading = false;
             }
           },
 
-          async retryStation(stIdx) {
-            const st = this.sync.result.results[stIdx];
-            const failedPtrs = st.records
-              .filter((r) => !r.valid)
-              .map((r) => r.ptr);
+          // Called for every progress WS message during sync
+          handleSyncProgress(prog) {
+            if (prog.station === "__done__") {
+              // All stations finished
+              this.sync.loading = false;
+              // Auto-select first station with results
+              const first = Object.keys(this.sync.stationResults)[0];
+              if (first) this.sync.selectedIdx = first;
+              return;
+            }
+            // Update progress card
+            this.sync.progress[prog.station] = prog;
+            // On final message for a station (pct===100 and records present)
+            if (prog.pct === 100 && prog.records && prog.records.length > 0) {
+              this.sync.stationResults[prog.station] = prog.records;
+              if (!this.sync.selectedIdx) this.sync.selectedIdx = prog.station;
+            }
+          },
+
+          // ─── Area chart helpers
+          // SIG_NAMES[i] maps HourRecord.Modes[i] (i=0..7) to a human label
+          sigName(i) {
+            const names = ['Flow Min','Raw Pulses','Pf PSI','Tf DEG F','Multiplier','Uncorr Vol MCF','Vol Accum MCF','Energy MMBTU'];
+            return names[i] || `Señal ${i}`;
+          },
+          sigColor(i) {
+            const colors = ['#7AD400','#0ea5e9','#f59e0b','#ec4899','#8b5cf6','#14b8a6','#f97316','#007934'];
+            return colors[i % colors.length];
+          },
+
+          // Generate an SVG area path for one signal index across all 840 records
+          areaPath(sigIdx, records, endian) {
+            if (!records || !records.length) return '';
+            const W = 840, H = 180;
+            const vals = records.map(r => {
+              if (!r || !r.valid || !r.modes || !r.modes[sigIdx]) return null;
+              const v = r.modes[sigIdx][endian];
+              return (v == null || !isFinite(v)) ? null : v;
+            });
+            const defined = vals.filter(v => v !== null);
+            if (!defined.length) return '';
+            const mn = Math.min(...defined), mx = Math.max(...defined);
+            const range = mx - mn || 1;
+            const scaleY = v => H - Math.round(((v - mn) / range) * (H - 8)) - 4;
+            let d = '';
+            let inPath = false;
+            for (let i = 0; i < vals.length; i++) {
+              const v = vals[i];
+              if (v === null) { inPath = false; continue; }
+              const x = Math.round((i / (W - 1)) * W);
+              const y = scaleY(v);
+              if (!inPath) { d += `M${x},${y} `; inPath = true; }
+              else d += `L${x},${y} `;
+            }
+            if (!d) return '';
+            // Close area to bottom
+            const lastDefined = vals.reduceRight((a, v, i) => a !== null ? a : (v !== null ? i : null), null);
+            const firstDefined = vals.findIndex(v => v !== null);
+            if (firstDefined !== null && lastDefined !== null) {
+              const x0 = Math.round((firstDefined / (W - 1)) * W);
+              const x1 = Math.round((lastDefined / (W - 1)) * W);
+              d += `L${x1},${H} L${x0},${H} Z`;
+            }
+            return d;
+          },
+
+          // Min/max/avg for a signal on current selected station
+          sigStats(sigIdx) {
+            const records = this.sync.stationResults[this.sync.selectedIdx];
+            if (!records) return { min: '—', max: '—', avg: '—', ok: 0 };
+            const endian = this.roc.dbEndian;
+            const vals = records.map(r => {
+              if (!r || !r.valid || !r.modes || !r.modes[sigIdx]) return null;
+              const v = r.modes[sigIdx][endian];
+              return (v == null || !isFinite(v)) ? null : v;
+            }).filter(v => v !== null);
+            if (!vals.length) return { min: '—', max: '—', avg: '—', ok: 0 };
+            const mn = Math.min(...vals), mx = Math.max(...vals);
+            const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+            return {
+              min: mn.toFixed(3),
+              max: mx.toFixed(3),
+              avg: avg.toFixed(3),
+              ok: vals.length,
+            };
+          },
+
+          async retryStation(stationName) {
+            const records = this.sync.stationResults[stationName];
+            if (!records) return;
+            const failedPtrs = records.filter((r) => !r.valid).map((r) => r.ptr);
             if (failedPtrs.length === 0) return;
 
-            // Find full station config for detail
-            const config = this.stations.find((s) => s.name === st.station);
+            const config = this.stations.find((s) => s.name === stationName);
             if (!config) return;
 
             this.sync.loading = true;
             try {
               const r = await fetch("/api/stations/partial-sync", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", "X-Session-ID": this.sessionId },
                 body: JSON.stringify({
                   ip: config.ip,
                   port: config.port,
@@ -3162,10 +3340,9 @@
               });
               const d = await r.json();
               if (d.records) {
-                // Merge back
                 d.records.forEach((newRec) => {
-                  const idx = st.records.findIndex((r) => r.ptr === newRec.ptr);
-                  if (idx !== -1) st.records[idx] = newRec;
+                  const idx = records.findIndex((r) => r.ptr === newRec.ptr);
+                  if (idx !== -1) records[idx] = newRec;
                 });
               }
             } catch (e) {
@@ -3225,6 +3402,7 @@
             this.roc.ptrQty = st.data_registers_count;
             this.roc.dbAddr = st.base_data_address;
             this.roc.dbEndian = st.endian;
+            this.activeStation = st.name;
           },
 
           toggleFilter(lvl) {

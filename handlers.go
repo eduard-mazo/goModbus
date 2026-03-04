@@ -7,43 +7,49 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
 
-// wsClientConn holds a WebSocket connection with its own send channel
+// wsClientConn holds a WebSocket connection with its own send channel and session ID
 type wsClientConn struct {
-	conn *websocket.Conn
-	ch   chan LogMessage
+	conn      *websocket.Conn
+	ch        chan LogMessage
+	sessionID string // set via {"type":"register","sid":"<uuid>"} from the client
 }
 
 var logClients = make(map[*wsClientConn]bool)
 
-// wsHandler upgrades HTTP to WebSocket and streams log messages
+// wsHandler upgrades HTTP to WebSocket and streams log messages.
+// Each browser tab registers its session ID so that session-scoped messages
+// (sync progress, etc.) are routed exclusively to the owning connection.
 func wsHandler(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		return
 	}
 
-	client := &wsClientConn{conn: conn, ch: make(chan LogMessage, 128)}
+	client := &wsClientConn{conn: conn, ch: make(chan LogMessage, 256)}
 
-	// Replay history BEFORE registering the client.
-	// If we register first, a message that arrives during the replay enters both
-	// logBuffer (sent via history loop) and client.ch (sent via broadcaster) → duplicate.
+	// Replay history BEFORE registering so we don't double-deliver live messages.
+	// Skip SID-tagged messages — progress events from a previous session are irrelevant.
 	logMutex.Lock()
 	history := make([]LogMessage, len(logBuffer))
 	copy(history, logBuffer)
 	logMutex.Unlock()
 	for _, msg := range history {
+		if msg.SID != "" {
+			continue
+		}
 		if err := conn.WriteJSON(msg); err != nil {
 			return
 		}
 	}
 
-	// Now register to receive live messages.
+	// Register to receive live messages.
 	clientsMu.Lock()
 	logClients[client] = true
 	clientsMu.Unlock()
@@ -56,9 +62,38 @@ func wsHandler(c *gin.Context) {
 		conn.Close()
 	}()
 
-	// Stream new messages until client disconnects
-	for msg := range client.ch {
-		if err := conn.WriteJSON(msg); err != nil {
+	// Reader goroutine: handles session registration messages from the browser.
+	// When the browser sends {"type":"register","sid":"<uuid>"}, we bind the client.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			var reg struct {
+				Type string `json:"type"`
+				SID  string `json:"sid"`
+			}
+			if err := conn.ReadJSON(&reg); err != nil {
+				return
+			}
+			if reg.Type == "register" && reg.SID != "" {
+				clientsMu.Lock()
+				client.sessionID = reg.SID
+				clientsMu.Unlock()
+			}
+		}
+	}()
+
+	// Write loop: stream messages until client disconnects.
+	for {
+		select {
+		case msg, ok := <-client.ch:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(msg); err != nil {
+				return
+			}
+		case <-done:
 			return
 		}
 	}
@@ -570,9 +605,14 @@ type SyncRequest struct {
 	Stations []string `json:"stations"` // List of station names to sync
 }
 
+// fullSyncHandler starts a background sync and returns immediately.
+// Progress and results are delivered to the requesting client via WebSocket
+// using session-scoped messages (SID from X-Session-ID header).
 func fullSyncHandler(c *gin.Context) {
 	var req SyncRequest
 	_ = c.ShouldBindJSON(&req)
+
+	sid := c.GetHeader("X-Session-ID")
 
 	cfg, _ := loadConfig(configPath)
 	var filtered []StationConfig
@@ -594,72 +634,131 @@ func fullSyncHandler(c *gin.Context) {
 		return
 	}
 
-	startGlobal := time.Now()
-	var wgStations sync.WaitGroup
-	results := make([]StationSyncResult, len(filtered))
+	// Fire-and-forget: respond immediately, stream progress over WS
+	go func() {
+		var wg sync.WaitGroup
+		for _, st := range filtered {
+			wg.Add(1)
+			go func(s StationConfig) {
+				defer wg.Done()
+				syncStation(sid, s)
+			}(st)
+		}
+		wg.Wait()
+		// Signal global completion
+		sessionBroadcast(sid, LogMessage{
+			Level:   "INFO",
+			Message: fmt.Sprintf("Sync global completado — %d estaciones", len(filtered)),
+			Progress: &SyncProgress{
+				Station: "__done__",
+				Done:    len(filtered),
+				Total:   len(filtered),
+				Pct:     100,
+			},
+		})
+	}()
 
-	for i, st := range filtered {
-		wgStations.Add(1)
-		go func(idx int, s StationConfig) {
-			defer wgStations.Done()
-			stStart := time.Now()
-			res := StationSyncResult{Station: s.Name, IP: s.IP, Records: make([]HourRecord, 840)}
+	c.JSON(http.StatusOK, gin.H{"status": "started", "stations": len(filtered)})
+}
 
-			type job struct{ ptr int }
-			jobs := make(chan job, 840)
-			for p := 0; p < 840; p++ {
-				jobs <- job{p}
-			}
-			close(jobs)
+// syncStation executes a full 840-record download for one station and streams
+// progress events (every 42 records ≈ 5%) to the session over WebSocket.
+func syncStation(sid string, s StationConfig) {
+	const total = 840
+	const progressStep = 42 // ~5% per update
 
-			var wgWorkers sync.WaitGroup
-			for w := 0; w < 2; w++ {
-				wgWorkers.Add(1)
-				go func() {
-					defer wgWorkers.Done()
-					client := NewModbusClient(s.IP, s.Port, s.ID, s.Endian)
-					if err := client.Connect(); err != nil {
-						res.Error = "Conexión fallida: " + err.Error()
-						return
-					}
-					defer client.Close()
+	records := make([]HourRecord, total)
+	var doneCount int32
 
-					for j := range jobs {
-						data, _, _, err := client.Execute(FCReadHoldingRegisters, s.DBAddress, uint16(j.ptr), nil)
-						rec := HourRecord{Hour: j.ptr / 10, Ptr: uint16(j.ptr)}
-						if err == nil {
-							rec.Valid = true
-							rec.Hex = fmt.Sprintf("%X", data)
-							payload := data
-							if len(data) >= 4 {
-								payload = data[4:]
-							}
-							rec.Modes = DecodeAllModes(payload)
-							for i := range rec.Modes {
-								rec.Modes[i].Sanitize()
-							}
-							floats := client.DecodeFloat32(payload)
-							if len(floats) > 0 {
-								rec.Value = sanitizeFloat(floats[0])
-							}
-						}
-						res.Records[j.ptr] = rec
-					}
-				}()
-			}
-			wgWorkers.Wait()
-			res.Elapsed = time.Since(stStart).Milliseconds()
-			results[idx] = res
-			broadcastLog("INFO", fmt.Sprintf("Sync Completo: %s (%d ms)", s.Name, res.Elapsed), nil, 0, nil, "")
-		}(i, st)
+	type job struct{ ptr int }
+	jobs := make(chan job, total)
+	for p := 0; p < total; p++ {
+		jobs <- job{p}
 	}
+	close(jobs)
 
-	wgStations.Wait()
-	c.JSON(http.StatusOK, gin.H{
-		"total_stations": len(filtered),
-		"elapsed_ms":     time.Since(startGlobal).Milliseconds(),
-		"results":        results,
+	stStart := time.Now()
+	var connErr string
+	var mu sync.Mutex
+
+	var wgWorkers sync.WaitGroup
+	for w := 0; w < 2; w++ {
+		wgWorkers.Add(1)
+		go func() {
+			defer wgWorkers.Done()
+			client := NewModbusClient(s.IP, s.Port, s.ID, s.Endian)
+			if err := client.Connect(); err != nil {
+				mu.Lock()
+				connErr = "Conexión fallida: " + err.Error()
+				mu.Unlock()
+				// Drain jobs so the channel closes and other workers notice
+				for range jobs {
+				}
+				return
+			}
+			defer client.Close()
+
+			for j := range jobs {
+				data, _, _, err := client.Execute(FCReadHoldingRegisters, s.DBAddress, uint16(j.ptr), nil)
+				rec := HourRecord{Hour: j.ptr / 10, Ptr: uint16(j.ptr)}
+				if err == nil {
+					rec.Valid = true
+					rec.Hex = fmt.Sprintf("%X", data)
+					payload := data
+					if len(data) >= 4 {
+						payload = data[4:]
+					}
+					rec.Modes = DecodeAllModes(payload)
+					for i := range rec.Modes {
+						rec.Modes[i].Sanitize()
+					}
+					floats := client.DecodeFloat32(payload)
+					if len(floats) > 0 {
+						rec.Value = sanitizeFloat(floats[0])
+					}
+				}
+				records[j.ptr] = rec
+
+				n := atomic.AddInt32(&doneCount, 1)
+				// Emit progress every progressStep records (~5% increments)
+				if n%progressStep == 0 || int(n) == total {
+					pct := int(n) * 100 / total
+					sessionBroadcast(sid, LogMessage{
+						Level:   "SYNC",
+						Message: fmt.Sprintf("%s: %d/%d (%d%%)", s.Name, n, total, pct),
+						Progress: &SyncProgress{
+							Station: s.Name,
+							Done:    int(n),
+							Total:   total,
+							Pct:     pct,
+						},
+					})
+				}
+			}
+		}()
+	}
+	wgWorkers.Wait()
+
+	elapsed := time.Since(stStart).Milliseconds()
+	prog := &SyncProgress{
+		Station: s.Name,
+		Done:    total,
+		Total:   total,
+		Pct:     100,
+		Records: records,
+	}
+	if connErr != "" {
+		prog.Error = connErr
+		prog.Done = 0
+		prog.Pct = 0
+		prog.Records = nil
+	}
+	sessionBroadcast(sid, LogMessage{
+		Level:    "INFO",
+		Message:  fmt.Sprintf("Sync Completo: %s (%d ms)", s.Name, elapsed),
+		Progress: prog,
 	})
+	broadcastLog("INFO", fmt.Sprintf("Sync Completo: %s (%d ms)", s.Name, elapsed), nil, 0, nil, "")
 }
 
 type PartialSyncRequest struct {
