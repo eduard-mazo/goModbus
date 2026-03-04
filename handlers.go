@@ -687,6 +687,7 @@ func syncStation(sid string, s StationConfig) {
 		go func() {
 			defer wgWorkers.Done()
 			client := NewModbusClient(s.IP, s.Port, s.ID, s.Endian)
+			client.Silent = true // suppress per-record TX/RX logs during bulk sync
 			if err := client.Connect(); err != nil {
 				mu.Lock()
 				connErr = "Conexión fallida: " + err.Error()

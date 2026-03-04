@@ -52,6 +52,7 @@ type ModbusClient struct {
 	Timeout       time.Duration
 	Conn          net.Conn
 	TransactionID uint16
+	Silent        bool // when true, suppresses TX/RX INFO/DEBUG logs (used during bulk sync)
 }
 
 func NewModbusClient(host string, port int, unitID byte, endian Endianness) *ModbusClient {
@@ -73,7 +74,9 @@ func (c *ModbusClient) Connect() error {
 		return fmt.Errorf("conexión a %s falló: %w", address, err)
 	}
 	c.Conn = conn
-	broadcastLog("INFO", fmt.Sprintf("Conectado a %s (UnitID=%d)", address, c.UnitID), nil, 0, nil, "")
+	if !c.Silent {
+		broadcastLog("INFO", fmt.Sprintf("Conectado a %s (UnitID=%d)", address, c.UnitID), nil, 0, nil, "")
+	}
 	return nil
 }
 
@@ -122,7 +125,9 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 	c.Conn.SetDeadline(time.Now().Add(c.Timeout))
 	start := time.Now()
 
-	broadcastLog("DEBUG", fmt.Sprintf("TX FC=0x%02X addr=%d qty=%d", fc, addr, qty), req, 0, nil, "")
+	if !c.Silent {
+		broadcastLog("DEBUG", fmt.Sprintf("TX FC=0x%02X addr=%d qty=%d", fc, addr, qty), req, 0, nil, "")
+	}
 
 	if _, err := c.Conn.Write(req); err != nil {
 		broadcastLog("ERROR", fmt.Sprintf("TX error FC=0x%02X addr=%d: %v", fc, addr, err), nil, 0, nil, "")
@@ -159,7 +164,9 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 		return nil, req, elapsed, fmt.Errorf("excepción 0x%02X: %s", code, desc)
 	}
 
-	broadcastLog("INFO", fmt.Sprintf("RX OK %dms | %d bytes datos", elapsed.Milliseconds(), n), resp, elapsed, nil, "")
+	if !c.Silent {
+		broadcastLog("INFO", fmt.Sprintf("RX OK %dms | %d bytes datos", elapsed.Milliseconds(), n), resp, elapsed, nil, "")
+	}
 	c.TransactionID++
 
 	// Data payload starts after MBAP(7) + FC(1) + ByteCount(1) = byte 9

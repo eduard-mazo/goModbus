@@ -2688,8 +2688,15 @@
                           </div>
                         </div>
                         <div style="height:5px;background:#e2e8e2;border-radius:3px;overflow:hidden;">
-                          <div style="height:100%;border-radius:3px;transition:width 0.25s ease;"
-                            :style="`width:${sync.progress[name]?.pct||0}%;background:${sync.stationResults[name]?'#007934':'#7AD400'};`">
+                          <!-- All style in :style to avoid Alpine merge issues with static style attr -->
+                          <div
+                            :style="{
+                              height: '100%',
+                              borderRadius: '3px',
+                              transition: 'width 0.3s ease',
+                              width: (sync.progress[name]?.pct||0) + '%',
+                              background: sync.stationResults[name] ? '#007934' : '#7AD400'
+                            }">
                           </div>
                         </div>
                       </div>
@@ -3047,7 +3054,8 @@
 
           // ─── computed
           get filteredLogs() {
-            return this.logs.filter((m) => this.logFilters.includes(m.level));
+            // Limit DOM nodes to last 200 to prevent layout thrashing during bulk sync
+            return this.logs.filter((m) => this.logFilters.includes(m.level)).slice(-200);
           },
 
           // ─── ADU preview
@@ -3094,11 +3102,13 @@
                   return;
                 }
                 this.logs.push(msg);
-                if (this.logs.length > 2000) this.logs.shift();
-                this.$nextTick(() => {
-                  const el = this.$refs.logContainer;
-                  if (el) el.scrollTop = el.scrollHeight;
-                });
+                if (this.logs.length > 500) this.logs.shift();
+                if (this.logOpen) {
+                  this.$nextTick(() => {
+                    const el = this.$refs.logContainer;
+                    if (el) el.scrollTop = el.scrollHeight;
+                  });
+                }
               } catch (_) {}
             };
           },
@@ -3231,18 +3241,16 @@
           // Called for every progress WS message during sync
           handleSyncProgress(prog) {
             if (prog.station === "__done__") {
-              // All stations finished
               this.sync.loading = false;
-              // Auto-select first station with results
               const first = Object.keys(this.sync.stationResults)[0];
               if (first) this.sync.selectedIdx = first;
               return;
             }
-            // Update progress card
-            this.sync.progress[prog.station] = prog;
-            // On final message for a station (pct===100 and records present)
+            // Use spread to guarantee Alpine detects the mutation (avoids nested-proxy miss)
+            this.sync.progress = { ...this.sync.progress, [prog.station]: prog };
+            // Final message: store records in stationResults
             if (prog.pct === 100 && prog.records && prog.records.length > 0) {
-              this.sync.stationResults[prog.station] = prog.records;
+              this.sync.stationResults = { ...this.sync.stationResults, [prog.station]: prog.records };
               if (!this.sync.selectedIdx) this.sync.selectedIdx = prog.station;
             }
           },
