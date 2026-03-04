@@ -18,10 +18,9 @@ type StationConfig struct {
 	IP                 string     `yaml:"ip"                   json:"ip"`
 	Port               int        `yaml:"port"                 json:"port"`
 	ID                 byte       `yaml:"id"                   json:"id"`
-	PointerEndian      Endianness `yaml:"pointer_endian"       json:"pointer_endian"`
+	Endian             Endianness `yaml:"endian"               json:"endian"`
 	PointerAddress     uint16     `yaml:"pointer_address"      json:"pointer_address"`
-	DBEndian           Endianness `yaml:"db_endian"            json:"db_endian"`
-	DBAddress          uint16     `yaml:"db_address"           json:"db_address"`
+	DBAddress          uint16     `yaml:"base_data_address"    json:"base_data_address"`
 	DataRegistersCount uint16     `yaml:"data_registers_count" json:"data_registers_count"`
 	DataType           string     `yaml:"data_type"            json:"data_type"`
 }

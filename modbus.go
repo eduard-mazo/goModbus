@@ -286,6 +286,21 @@ type Float32Modes struct {
 	BADC float32 `json:"badc"` // Byte-Swap
 }
 
+// Sanitize replaces NaN or Inf values with 0 to prevent JSON marshal errors.
+func (f *Float32Modes) Sanitize() {
+	f.ABCD = sanitizeFloat(f.ABCD)
+	f.DCBA = sanitizeFloat(f.DCBA)
+	f.CDAB = sanitizeFloat(f.CDAB)
+	f.BADC = sanitizeFloat(f.BADC)
+}
+
+func sanitizeFloat(v float32) float32 {
+	if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+		return 0
+	}
+	return v
+}
+
 // DecodeAllModes decodes each 4-byte group in data under all four endianness modes.
 func DecodeAllModes(data []byte) []Float32Modes {
 	out := make([]Float32Modes, 0, len(data)/4)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -158,7 +159,13 @@ func queryHandler(c *gin.Context) {
 	case FCReadHoldingRegisters, FCReadInputRegisters:
 		resp.Registers = buildRegisterTable(data, req.StartAddress)
 		resp.Floats = client.DecodeFloat32(data)
+		for i, v := range resp.Floats {
+			resp.Floats[i] = sanitizeFloat(v)
+		}
 		resp.FloatModes = DecodeAllModes(data)
+		for i := range resp.FloatModes {
+			resp.FloatModes[i].Sanitize()
+		}
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -242,11 +249,14 @@ func rocHandler(c *gin.Context) {
 		}
 		resp.PointerHex = fmt.Sprintf("%X", data)
 		resp.PtrModes = DecodeAllModes(data)
+		for i := range resp.PtrModes {
+			resp.PtrModes[i].Sanitize()
+		}
 
 		if len(data) >= 4 {
 			floats := client.DecodeFloat32(data)
 			if len(floats) > 0 {
-				resp.PointerValue = float64(floats[0])
+				resp.PointerValue = float64(sanitizeFloat(floats[0]))
 			}
 		} else if len(data) >= 2 {
 			resp.PointerValue = float64(int16(binary.BigEndian.Uint16(data)))
@@ -269,7 +279,13 @@ func rocHandler(c *gin.Context) {
 		resp.DBHex = fmt.Sprintf("%X", data)
 		resp.DBRegisters = buildRegisterTable(data, req.DBAddr)
 		resp.DBFloats = client.DecodeFloat32(data)
+		for i, v := range resp.DBFloats {
+			resp.DBFloats[i] = sanitizeFloat(v)
+		}
 		resp.DBModes = DecodeAllModes(data)
+		for i := range resp.DBModes {
+			resp.DBModes[i].Sanitize()
+		}
 		broadcastLog("INFO", "Histórico ROC leído", data, 0, &resp.PointerValue, resp.DBHex)
 	}
 
@@ -423,38 +439,67 @@ func rocHistory24Handler(c *gin.Context) {
 			currentPtr, currentHour, startPtr, currentPtr, currentHour, 2*bufSize, bufSize),
 		nil, 0, nil, "")
 
-	// Step 4 – Fetch 24 hourly records
-	client.Endian = req.DBEndian
+	// Step 4 – Fetch 24 hourly records in parallel
 	resp.Records = make([]HourRecord, 24)
+	bufSize = int(req.BufSize)
+	start := time.Now()
 
+	type job struct{ h int }
+	jobs := make(chan job, 24)
 	for h := 0; h < 24; h++ {
-		ptr := uint16((startPtr + h) % bufSize)
+		jobs <- job{h}
+	}
+	close(jobs)
 
-		data, _, recElapsed, recErr := client.Execute(FCReadHoldingRegisters, req.DBAddr, ptr, nil)
-		totalMs += recElapsed.Milliseconds()
-
-		rec := HourRecord{Hour: h, Ptr: ptr}
-		if recErr != nil {
-			broadcastLog("WARN", fmt.Sprintf("History24 h=%02d ptr=%d: %s", h, ptr, recErr.Error()), nil, 0, nil, "")
-		} else {
-			rec.Valid = true
-			rec.Hex = fmt.Sprintf("%X", data)
-			// Skip bytes 0-3 (registers 0-1: date/hour metadata) before decoding measurements.
-			payload := data
-			if len(data) >= 4 {
-				payload = data[4:]
-			}
-			rec.Modes = DecodeAllModes(payload)
-			floats := client.DecodeFloat32(payload)
-			if len(floats) > 0 {
-				rec.Value = floats[0]
-			}
-		}
-		resp.Records[h] = rec
+	var wg sync.WaitGroup
+	numWorkers := 2 // Limit concurrency to not overwhelm the ROC device
+	if numWorkers > 24 {
+		numWorkers = 24
 	}
 
-	resp.ElapsedMs = totalMs
-	broadcastLog("INFO", fmt.Sprintf("History24 completo: %dms", totalMs), nil, 0, nil, "")
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Each worker gets its own client/connection
+			wClient := NewModbusClient(req.IP, req.Port, req.SlaveID, req.DBEndian)
+			if err := wClient.Connect(); err != nil {
+				return
+			}
+			defer wClient.Close()
+
+			for j := range jobs {
+				ptr := uint16((int(startPtr) + j.h) % bufSize)
+				data, _, _, err := wClient.Execute(FCReadHoldingRegisters, req.DBAddr, ptr, nil)
+
+				rec := HourRecord{Hour: j.h, Ptr: ptr}
+				if err != nil {
+					broadcastLog("WARN", fmt.Sprintf("History24 h=%02d ptr=%d: %s", j.h, ptr, err.Error()), nil, 0, nil, "")
+				} else {
+					rec.Valid = true
+					rec.Hex = fmt.Sprintf("%X", data)
+					payload := data
+					if len(data) >= 4 {
+						payload = data[4:]
+					}
+					rec.Modes = DecodeAllModes(payload)
+					// Sanitize modes for JSON safety
+					for i := range rec.Modes {
+						rec.Modes[i].Sanitize()
+					}
+					floats := wClient.DecodeFloat32(payload)
+					if len(floats) > 0 {
+						rec.Value = sanitizeFloat(floats[0])
+					}
+				}
+				resp.Records[j.h] = rec
+			}
+		}()
+	}
+	wg.Wait()
+
+	resp.ElapsedMs = time.Since(start).Milliseconds()
+	broadcastLog("INFO", fmt.Sprintf("History24 completo: %dms (paralelo)", resp.ElapsedMs), nil, 0, nil, "")
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -509,4 +554,164 @@ func rawHandler(c *gin.Context) {
 		fmt.Sprintf("RAW → %s:%d  %d bytes  RTT %dms", req.IP, req.Port, len(frame), resp.ElapsedMs),
 		frame, elapsed, nil, resp.RecvHex)
 	c.JSON(http.StatusOK, resp)
+}
+
+// --- FULL SYNC HANDLER (840 RECORDS PER STATION) ---
+
+type StationSyncResult struct {
+	Station string       `json:"station"`
+	IP      string       `json:"ip"`
+	Records []HourRecord `json:"records"`
+	Elapsed int64        `json:"elapsed_ms"`
+	Error   string       `json:"error,omitempty"`
+}
+
+type SyncRequest struct {
+	Stations []string `json:"stations"` // List of station names to sync
+}
+
+func fullSyncHandler(c *gin.Context) {
+	var req SyncRequest
+	_ = c.ShouldBindJSON(&req)
+
+	cfg, _ := loadConfig(configPath)
+	var filtered []StationConfig
+	if len(req.Stations) > 0 {
+		for _, name := range req.Stations {
+			for _, s := range cfg.Stations {
+				if s.Name == name {
+					filtered = append(filtered, s)
+					break
+				}
+			}
+		}
+	} else {
+		filtered = cfg.Stations
+	}
+
+	if len(filtered) == 0 {
+		c.JSON(http.StatusOK, gin.H{"error": "no hay estaciones seleccionadas"})
+		return
+	}
+
+	startGlobal := time.Now()
+	var wgStations sync.WaitGroup
+	results := make([]StationSyncResult, len(filtered))
+
+	for i, st := range filtered {
+		wgStations.Add(1)
+		go func(idx int, s StationConfig) {
+			defer wgStations.Done()
+			stStart := time.Now()
+			res := StationSyncResult{Station: s.Name, IP: s.IP, Records: make([]HourRecord, 840)}
+
+			type job struct{ ptr int }
+			jobs := make(chan job, 840)
+			for p := 0; p < 840; p++ {
+				jobs <- job{p}
+			}
+			close(jobs)
+
+			var wgWorkers sync.WaitGroup
+			for w := 0; w < 2; w++ {
+				wgWorkers.Add(1)
+				go func() {
+					defer wgWorkers.Done()
+					client := NewModbusClient(s.IP, s.Port, s.ID, s.Endian)
+					if err := client.Connect(); err != nil {
+						res.Error = "Conexión fallida: " + err.Error()
+						return
+					}
+					defer client.Close()
+
+					for j := range jobs {
+						data, _, _, err := client.Execute(FCReadHoldingRegisters, s.DBAddress, uint16(j.ptr), nil)
+						rec := HourRecord{Hour: j.ptr / 10, Ptr: uint16(j.ptr)}
+						if err == nil {
+							rec.Valid = true
+							rec.Hex = fmt.Sprintf("%X", data)
+							payload := data
+							if len(data) >= 4 {
+								payload = data[4:]
+							}
+							rec.Modes = DecodeAllModes(payload)
+							for i := range rec.Modes {
+								rec.Modes[i].Sanitize()
+							}
+							floats := client.DecodeFloat32(payload)
+							if len(floats) > 0 {
+								rec.Value = sanitizeFloat(floats[0])
+							}
+						}
+						res.Records[j.ptr] = rec
+					}
+				}()
+			}
+			wgWorkers.Wait()
+			res.Elapsed = time.Since(stStart).Milliseconds()
+			results[idx] = res
+			broadcastLog("INFO", fmt.Sprintf("Sync Completo: %s (%d ms)", s.Name, res.Elapsed), nil, 0, nil, "")
+		}(i, st)
+	}
+
+	wgStations.Wait()
+	c.JSON(http.StatusOK, gin.H{
+		"total_stations": len(filtered),
+		"elapsed_ms":     time.Since(startGlobal).Milliseconds(),
+		"results":        results,
+	})
+}
+
+type PartialSyncRequest struct {
+	IP        string   `json:"ip"`
+	Port      int      `json:"port"`
+	ID        byte     `json:"slave_id"`
+	Endian    Endianness `json:"endian"`
+	DBAddress uint16   `json:"db_address"`
+	Pointers  []uint16 `json:"pointers"`
+}
+
+func partialSyncHandler(c *gin.Context) {
+	var req PartialSyncRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.Pointers) == 0 {
+		c.JSON(http.StatusOK, gin.H{"records": []HourRecord{}})
+		return
+	}
+
+	client := NewModbusClient(req.IP, req.Port, req.ID, req.Endian)
+	if err := client.Connect(); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	defer client.Close()
+
+	records := make([]HourRecord, 0, len(req.Pointers))
+	for _, ptr := range req.Pointers {
+		data, _, _, err := client.Execute(FCReadHoldingRegisters, req.DBAddress, ptr, nil)
+		rec := HourRecord{Hour: int(ptr / 10), Ptr: ptr}
+		if err == nil {
+			rec.Valid = true
+			rec.Hex = fmt.Sprintf("%X", data)
+			payload := data
+			if len(data) >= 4 {
+				payload = data[4:]
+			}
+			rec.Modes = DecodeAllModes(payload)
+			for i := range rec.Modes {
+				rec.Modes[i].Sanitize()
+			}
+			floats := client.DecodeFloat32(payload)
+			if len(floats) > 0 {
+				rec.Value = sanitizeFloat(floats[0])
+			}
+		}
+		records = append(records, rec)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"records": records})
 }

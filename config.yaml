@@ -1,5 +1,5 @@
 stations:
-  - name: "Estación 1"
+  - name: "EET TASAJERA"
     ip: "10.155.150.201"
     port: 502
     id: 10
@@ -8,7 +8,7 @@ stations:
     pointer_address: 10000 # Dirección para leer el apuntador
     base_data_address: 700 # Dirección base para los datos
     data_registers_count: 2
-  - name: "Estación 2"
+  - name: "LLANOS"
     ip: "10.50.184.208"
     port: 502
     id: 2
@@ -17,3 +17,66 @@ stations:
     pointer_address: 10000 # Dirección para leer el apuntador
     base_data_address: 700 # Dirección base para los datos
     data_registers_count: 1
+  - name: "YOLOMBO"
+    ip: "10.156.168.116"
+    port: 502
+    id: 1
+    endian: "cdab" # (Little Endian)
+    data_type: "float32"
+    pointer_address: 10000 # Dirección para leer el apuntador
+    base_data_address: 700 # Dirección base para los datos
+    data_registers_count: 2
+  - name: "SANTO DOMINGO"
+    ip: "10.155.115.46"
+    port: 502
+    id: 1
+    endian: "cdab" # (Little Endian)
+    data_type: "float32"
+    pointer_address: 10000 # Dirección para leer el apuntador
+    base_data_address: 700 # Dirección base para los datos
+    data_registers_count: 2
+  - name: "SAN VICENTE"
+    ip: "10.155.249.194"
+    port: 502
+    id: 1
+    endian: "cdab" # (Little Endian)
+    data_type: "float32"
+    pointer_address: 10000 # Dirección para leer el apuntador
+    base_data_address: 700 # Dirección base para los datos
+    data_registers_count: 2
+  - name: "PARQUE DE LAS AGUAS"
+    ip: "10.14.224.5"
+    port: 502
+    id: 1
+    endian: "cdab" # (Little Endian)
+    data_type: "float32"
+    pointer_address: 10000 # Dirección para leer el apuntador
+    base_data_address: 700 # Dirección base para los datos
+    data_registers_count: 2
+  - name: "NARE"
+    ip: "10.14.201.3"
+    port: 502
+    id: 1
+    endian: "cdab" # (Little Endian)
+    data_type: "float32"
+    pointer_address: 10000 # Dirección para leer el apuntador
+    base_data_address: 700 # Dirección base para los datos
+    data_registers_count: 2
+  - name: "MACEO"
+    ip: "10.156.148.8"
+    port: 502
+    id: 1
+    endian: "cdab" # (Little Endian)
+    data_type: "float32"
+    pointer_address: 10000 # Dirección para leer el apuntador
+    base_data_address: 700 # Dirección base para los datos
+    data_registers_count: 2
+  - name: "FELISA"
+    ip: "10.155.249.193"
+    port: 502
+    id: 1
+    endian: "cdab" # (Little Endian)
+    data_type: "float32"
+    pointer_address: 10000 # Dirección para leer el apuntador
+    base_data_address: 700 # Dirección base para los datos
+    data_registers_count: 2

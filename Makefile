@@ -1,8 +1,11 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# ROC Modbus Expert | EPM — Makefile
-# ─────────────────────────────────────────────────────────────────────────────
+# Detect OS to set binary extension
+ifeq ($(OS),Windows_NT)
+    BINARY_EXT := .exe
+else
+    BINARY_EXT :=
+endif
 
-BINARY  := modbus_client
+BINARY  := modbus_client$(BINARY_EXT)
 MODULE  := $(shell go list -m 2>/dev/null)
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -36,10 +39,10 @@ help: ## Show this help message
 # ─── Build ────────────────────────────────────────────────────────────────────
 all: check build ## Run checks then build
 
-build: ## Compile binary (output: ./modbus_client)
+build: ## Compile binary (output: modbus_client)
 	@printf '\033[32m▶ Building\033[0m %s %s\n' "$(BINARY)" "$(VERSION)"
 	$(GO) build $(BUILD_FLAGS) -o $(BINARY) .
-	@printf '\033[32m✓ Done:\033[0m %s  (%s)\n' "$(BINARY)" "$$(du -sh $(BINARY) | cut -f1)"
+	@printf '\033[32m✓ Done:\033[0m %s\n' "$(BINARY)"
 
 build-debug: ## Compile with debug symbols (no -s -w, enables pprof)
 	$(GO) build -race -ldflags "-X main.version=$(VERSION)-debug" -o $(BINARY)-debug .
@@ -49,7 +52,7 @@ run: build ## Build and run the server (http://localhost:$(PORT))
 	@printf '\033[32m▶ Starting\033[0m http://localhost:$(PORT)\n'
 	./$(BINARY)
 
-dev: ## Run with race detector and live-reload friendly flags
+dev: ## Run with race detector
 	@printf '\033[33m▶ Dev mode\033[0m (race detector on) http://localhost:$(PORT)\n'
 	$(GO) run -race .
 

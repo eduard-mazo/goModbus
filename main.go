@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -43,22 +44,42 @@ func main() {
 	r.Use(gin.Recovery(), cors.Default())
 
 	r.GET("/", func(c *gin.Context) {
+		// Try reading from disk first for development
+		if data, err := os.ReadFile("index.html"); err == nil {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+			return
+		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
 	})
-	subFS, _ := fs.Sub(staticFS, "static")
-	r.StaticFS("/static", http.FS(subFS))
+
+	// Serve static files: try local disk first, then fallback to embed
+	r.GET("/static/*filepath", func(c *gin.Context) {
+		path := c.Param("filepath")
+		localPath := "static" + path
+		if _, err := os.Stat(localPath); err == nil {
+			c.File(localPath)
+			return
+		}
+		
+		// Fallback to embed
+		subFS, _ := fs.Sub(staticFS, "static")
+		http.StripPrefix("/static", http.FileServer(http.FS(subFS))).ServeHTTP(c.Writer, c.Request)
+	})
+	
 	r.GET("/ws", wsHandler)
 
 	api := r.Group("/api")
 	{
 		api.GET("/config", getConfigHandler)
+		api.POST("/stations/full-sync", fullSyncHandler)      // Updated to POST to support body filtering
+		api.POST("/stations/partial-sync", partialSyncHandler) // New endpoint for retries
 		api.POST("/query", queryHandler)          // Generic Modbus query (FC01-FC16)
 		api.POST("/roc", rocHandler)              // ROC pointer + history workflow
 		api.POST("/roc/history24", rocHistory24Handler) // ROC 24-hour circular buffer fetch
 		api.POST("/raw", rawHandler)                    // Send raw ADU frame as-is
 	}
 
-	broadcastLog("INFO", "ROC Modbus Expert v3.0 | EPM | http://localhost:8081", nil, 0, nil, "")
-	fmt.Println("ROC Modbus Expert v3.0 | EPM | http://localhost:8081")
-	r.Run(":8081")
+	broadcastLog("INFO", "ROC Modbus Expert v3.0 | EPM | http://localhost:8080", nil, 0, nil, "")
+	fmt.Println("ROC Modbus Expert v3.0 | EPM | http://localhost:8080")
+	r.Run(":8080")
 }
