@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: 'IBM Plex Sans', sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; }
+#app { height: 100%; }
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c5cfc5; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #7ad400; }
+
+/* Form controls */
+.fi {
+  width: 100%; height: 30px; padding: 0 8px;
+  background: #fff; border: 1px solid #d1d8d1; border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1a2a1a;
+  outline: none; transition: border-color 0.12s;
+}
+.fi:focus { border-color: #7ad400; box-shadow: 0 0 0 2px rgba(122,212,0,.15); }
+.fi-sm { height: 26px; font-size: 11px; }
+
+.fs {
+  width: 100%; height: 30px; padding: 0 24px 0 8px;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7d6b'/%3E%3C/svg%3E") no-repeat right 8px center;
+  border: 1px solid #d1d8d1; border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1a2a1a;
+  outline: none; appearance: none; transition: border-color 0.12s;
+}
+.fs:focus { border-color: #7ad400; box-shadow: 0 0 0 2px rgba(122,212,0,.15); }
+
+.lbl {
+  display: block; font-size: 10px; font-weight: 600; color: #6b7d6b;
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 12px; border-radius: 3px;
+  font-size: 12px; font-weight: 600; border: none; cursor: pointer;
+  white-space: nowrap; transition: background .12s, opacity .12s;
+}
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-lime { background: #7ad400; color: #fff; }
+.btn-lime:hover:not(:disabled) { background: #5fa300; }
+.btn-forest { background: #007934; color: #fff; }
+.btn-forest:hover:not(:disabled) { background: #005526; }
+.btn-ghost { background: transparent; color: #4d5e4d; border: 1px solid #d1d8d1; }
+.btn-ghost:hover:not(:disabled) { border-color: #7ad400; color: #007934; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-danger:hover:not(:disabled) { background: #b91c1c; }
+.btn-sm { height: 26px; padding: 0 10px; font-size: 11px; }
+
+/* Cards */
+.card { background: #fff; border: 1px solid #e2e8e2; border-radius: 4px; }
+.card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-bottom: 1px solid #e2e8e2;
+}
+.card-title {
+  font-size: 11px; font-weight: 700; color: #374437;
+  text-transform: uppercase; letter-spacing: .08em;
+}
+
+/* Tabs */
+.tab {
+  padding: 0 16px; height: 38px; font-size: 12px; font-weight: 600;
+  border: none; background: none; cursor: pointer; color: #6b7d6b;
+  border-bottom: 2px solid transparent;
+  transition: color .12s, border-color .12s;
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.tab:hover { color: #374437; }
+.tab.active { color: #007934; border-bottom-color: #7ad400; }
+
+/* Byte cells */
+.byte {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;
+}
+.byte-req { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+.byte-res { background: #f4fce8; border: 1px solid #bef264; color: #3a5c00; }
+
+/* Log terminal */
+.terminal { background: #0a0f0a; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+.log-INFO { color: #7ad400; }
+.log-DEBUG { color: #60a5fa; }
+.log-ERROR { color: #f87171; }
+.log-WARN { color: #fbbf24; }
+.log-SYNC { color: #a78bfa; }
+
+/* Sidebar sections */
+.sbar-section { padding: 12px; border-bottom: 1px solid #1e2a1f; }
+.sbar-label {
+  font-size: 10px; font-weight: 600; color: #4d6b4d;
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px;
+}
+
+/* Coil grid */
+.coil-on { background: #7ad400; color: #fff; }
+.coil-off { background: #e2e8e2; color: #6b7d6b; }

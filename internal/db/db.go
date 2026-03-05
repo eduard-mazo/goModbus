@@ -1,0 +1,58 @@
+package db
+
+import (
+	"database/sql"
+	"fmt"
+
+	_ "modernc.org/sqlite"
+)
+
+// Open opens (or creates) the SQLite database at path and runs migrations.
+func Open(path string) (*sql.DB, error) {
+	database, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, fmt.Errorf("db: abrir %s: %w", path, err)
+	}
+	database.SetMaxOpenConns(1) // SQLite is single-writer
+	if err := migrate(database); err != nil {
+		database.Close()
+		return nil, err
+	}
+	return database, nil
+}
+
+func migrate(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS sync_sessions (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			started_at  DATETIME NOT NULL,
+			finished_at DATETIME,
+			stations    TEXT NOT NULL,
+			total_ptrs  INTEGER,
+			ok_ptrs     INTEGER
+		);
+
+		CREATE TABLE IF NOT EXISTS sync_records (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id  INTEGER NOT NULL REFERENCES sync_sessions(id),
+			station     TEXT NOT NULL,
+			ptr         INTEGER NOT NULL,
+			hour_label  TEXT,
+			valid       INTEGER NOT NULL,
+			signals     TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS query_history (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			queried_at  DATETIME NOT NULL,
+			host        TEXT,
+			port        INTEGER,
+			unit_id     INTEGER,
+			fc          INTEGER,
+			address     INTEGER,
+			quantity    INTEGER,
+			result_hex  TEXT
+		);
+	`)
+	return err
+}

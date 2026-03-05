@@ -2,32 +2,75 @@
 
 ## 🛠 Comandos de Desarrollo
 
-- **Compilar (Windows):** `make build` (Genera `modbus_client.exe`)
-- **Modo Desarrollo:** `make dev` (Lee archivos `index.html` y `/static` desde disco en tiempo real)
-- **Limpiar:** `make clean`
-- **Tidying:** `go mod tidy`
+```bash
+make build           # build-frontend + go build → modbus_client
+make build-frontend  # cd frontend && npm ci && npm run build (→ dist/)
+make build-go        # go build ./cmd/server/ -o modbus_client
+make dev-frontend    # cd frontend && npm run dev (Vite :5173, proxy → :8443)
+make dev-backend     # go run ./cmd/server/
+make clean
+go mod tidy
+```
 
-## 🏗 Arquitectura de Sincronización Paralela
+## 🏗 Arquitectura v4.0
 
-- **POST /api/stations/full-sync**:
-    - `Stations` (array strings): Filtra estaciones del `config.yaml`.
-    - **Algoritmo**: Lanza 1 goroutine por estación. Cada estación usa un **Worker Pool interno de 2 trabajadores** para bajar los 840 registros de forma concurrente, evitando la saturación del puerto TCP del equipo esclavo.
-- **POST /api/stations/partial-sync**:
-    - Reintenta solo los `pointers` (array uint16) específicos que fallaron, recibiendo IP/Puerto/ID/Endian para precisión quirúrgica.
+### Estructura de paquetes Go
+```
+cmd/server/main.go          ← entrada: TLS, DB, rutas, embed
+internal/
+  api/handlers/             ← ws, config, query, roc, sync, raw
+  api/router.go
+  modbus/                   ← client, protocol, decoders
+  logger/                   ← broadcaster, ring buffer, tipos
+  config/                   ← YAML load, tipos
+  certgen/certs.go          ← auto-genera cert TLS en certs/
+  db/                       ← SQLite (modernc.org/sqlite, sin CGO)
+web.go                      ← go:embed dist + static (package web)
+```
+
+### Frontend Vue 3
+```
+frontend/
+  src/
+    stores/    ← connection, logs, modbus, roc, sync (Pinia)
+    services/  ← api.js (axios /api), websocket.js (UUID sesión)
+    views/     ← QueryView, RocView, SyncView, RawView
+    components/layout/, modbus/, roc/, sync/
+  tailwind.config.js   ← colores EPM: g, lime, forest
+  postcss.config.js    ← tailwindcss + autoprefixer
+```
+
+**Sin dependencias CDN** — Tailwind se compila en `dist/assets/index-*.css` vía PostCSS/Vite.
+Las fuentes IBM Plex Sans y JetBrains Mono están en `static/fonts/` (autoembebidas).
+
+### Sincronización Paralela
+- **POST /api/stations/full-sync** — goroutine por estación, worker pool interno de 2 trabajadores, 840 registros concurrentes.
+- **POST /api/stations/partial-sync** — reintenta sólo los `pointers` fallidos.
+
+### HTTPS
+- `:8443` HTTPS (cert auto-generado en `certs/` al primer arranque, ECDSA P256, 10 años).
+- `:8083` HTTP → redirección a HTTPS.
+
+### SQLite
+- `modernc.org/sqlite` (pure Go, sin CGO), archivo `modbus.db`.
+- Tablas: `sync_sessions`, `sync_records`, `query_history`.
 
 ## ✒️ Guía de Estilo
 
-- **Go**: Seguir `go fmt`. Nombres de variables camelCase, excepto constantes (PascalCase o UPPER_CASE según contexto).
-- **Frontend**: 
-    - Alpine.js para la reactividad.
-    - Mantener `index.html` como SPA (Single Page Application).
-    - Los estilos se definen en bloques `<style>` y colores se ajustan para contrastes profesionales (#0f172a para cabeceras, #f8fafc para fondo).
-- **Logs**: Usar `broadcastLog` para enviar tramas TX/RX a la terminal web.
-- **Seguridad**: Sanitizar siempre los floats (`NaN` e `Inf`) a `0` antes de la serialización JSON para evitar errores de parseo en el navegador.
+- **Go**: `go fmt`, camelCase variables, PascalCase exportados.
+- **Vue**: Composition API (`<script setup>`), Pinia stores, sin lógica en templates.
+- **CSS**: clases utilitarias Tailwind + clases semánticas en `style.css` (`.btn`, `.fi`, `.fs`, `.card`, `.tab`, `.byte`, `.terminal`, `.log-*`).
+- **Colores EPM**: verde cítrico `#7AD400` (lime), verde bosque `#007934` (forest), grises `g-*`.
+- **Logs**: `BroadcastLog` (todos los clientes) / `SessionBroadcast(sid, msg)` (sesión privada).
+- **Seguridad**: sanitizar floats `NaN`/`Inf` → `0` antes de JSON.
 
-## 📂 Estructura de Archivos
-- `main.go`: Servidor Gin y WebSockets.
-- `handlers.go`: Lógica de API REST (Query, ROC, Sync).
-- `modbus.go`: Cliente Modbus TCP y decodificadores Endian.
-- `config.go`: Persistencia de configuración YAML.
-- `index.html`: UI Reactiva y lógica del cliente Alpine.js.
+## 📂 Archivos Críticos
+| Archivo | Propósito |
+|---------|-----------|
+| `cmd/server/main.go` | Punto de entrada |
+| `internal/api/handlers/sync.go` | FullSync + PartialSync + worker pool |
+| `internal/modbus/client.go` | `LogFunc` var (rompe ciclo de imports) |
+| `internal/logger/types.go` | Interfaz `Client` para WS |
+| `web.go` | `go:embed dist static` (package web, raíz del módulo) |
+| `frontend/src/stores/sync.js` | Estado sync + handleProgress |
+| `frontend/src/services/websocket.js` | UUID sesión + enrutamiento WS |

@@ -2,5 +2,10 @@ modbus_client
 modbus_client.exe
 modbus_client-debug
 goModbus
+server
 session.md
 logs/
+dist/
+certs/
+modbus.db
+frontend/node_modules/
