@@ -49,18 +49,12 @@
           <div class="flex items-center justify-between mb-1">
             <span class="text-xs font-semibold text-g-700">{{ name }}</span>
             <div class="flex items-center gap-2">
-              <span v-if="sync.stationResults[name]" class="text-xs font-semibold text-forest">
-                ✓ Completo
-              </span>
-              <span class="text-xs font-mono text-g-500">
-                {{ sync.progress[name]?.done || 0 }}/840
-              </span>
+              <span v-if="sync.stationResults[name]" class="text-xs font-semibold text-forest">✓ Completo</span>
+              <span class="text-xs font-mono text-g-500">{{ sync.progress[name]?.done || 0 }}/840</span>
               <span class="text-xs font-bold font-mono" :class="sync.stationResults[name] ? 'text-forest' : 'text-lime'">
                 {{ sync.progress[name]?.pct || 0 }}%
               </span>
-              <span v-if="sync.progress[name]?.error" class="text-xs text-red-500">
-                {{ sync.progress[name].error }}
-              </span>
+              <span v-if="sync.progress[name]?.error" class="text-xs text-red-500">{{ sync.progress[name].error }}</span>
             </div>
           </div>
           <div class="h-1.5 rounded-full bg-g-200 overflow-hidden">
@@ -74,7 +68,7 @@
       </div>
     </div>
 
-    <!-- Results section -->
+    <!-- Results -->
     <template v-if="Object.keys(sync.stationResults).length > 0">
 
       <!-- Station tabs -->
@@ -87,55 +81,48 @@
         >{{ name }}</button>
       </div>
 
-      <!-- Chart + stats -->
+      <!-- Multi-signal chart -->
       <div v-if="sync.selectedIdx && currentRecords" class="card">
         <div class="card-head">
-          <span class="card-title">Análisis de Señal — {{ sync.selectedIdx }} (840 registros)</span>
-          <div class="flex items-center gap-3">
-            <div class="flex items-center gap-1">
-              <label class="lbl mb-0 mr-1">Señal</label>
-              <select class="fs" style="width:auto;" v-model.number="sync.chartSig">
-                <option v-for="(n, i) in SIG_NAMES" :key="i" :value="i">{{ n }}</option>
-              </select>
-            </div>
-            <div class="flex items-center gap-1">
-              <label class="lbl mb-0 mr-1">Endian</label>
-              <select class="fs" style="width:auto;" v-model="rocStore.dbEndian">
-                <option value="abcd">ABCD</option>
-                <option value="dcba">DCBA</option>
-                <option value="cdab">CDAB</option>
-                <option value="badc">BADC</option>
-              </select>
-            </div>
+          <span class="card-title">
+            Análisis — {{ sync.selectedIdx }}
+            <span class="text-g-400 font-normal text-xs ml-1">(840 registros · doble clic en nombre para renombrar señal)</span>
+          </span>
+          <div class="flex items-center gap-2">
+            <label class="lbl mb-0 mr-1">Endian</label>
+            <select class="fs" style="width:auto;" v-model="rocStore.dbEndian">
+              <option value="abcd">ABCD</option>
+              <option value="dcba">DCBA</option>
+              <option value="cdab">CDAB (ROC)</option>
+              <option value="badc">BADC</option>
+            </select>
           </div>
         </div>
-        <div class="px-3 pt-2">
-          <AreaChart
+        <div class="p-3">
+          <MultiSignalChart
             :records="currentRecords"
-            :sigIdx="sync.chartSig"
             :endian="rocStore.dbEndian"
-            :color="sigColor(sync.chartSig)"
+            :stationName="sync.selectedIdx"
           />
-        </div>
-        <!-- Stats -->
-        <div class="grid grid-cols-4 divide-x divide-g-200 border-t border-g-200">
-          <div v-for="stat in ['min','max','avg','ok']" :key="stat" class="p-3 text-center">
-            <div class="text-xs text-g-400 uppercase mb-1">{{ stat === 'ok' ? 'Válidos' : stat.toUpperCase() }}</div>
-            <div class="font-mono font-bold text-g-700">{{ stats[stat] }}</div>
-          </div>
         </div>
       </div>
 
-      <!-- Record table -->
+      <!-- Record table (signal selector kept for detail view) -->
       <div v-if="sync.selectedIdx && currentRecords" class="card overflow-hidden">
-        <div class="card-head"><span class="card-title">Tabla de Registros — {{ sync.selectedIdx }}</span>
-          <button
-            class="btn btn-sm btn-ghost"
-            @click="sync.retryStation(sync.selectedIdx, stations, sessionId)"
-            :disabled="sync.loading"
-          >Reintentar fallos</button>
+        <div class="card-head">
+          <span class="card-title">Tabla de Registros — {{ sync.selectedIdx }}</span>
+          <div class="flex items-center gap-2">
+            <select class="fs" style="width:auto;" v-model.number="sync.chartSig">
+              <option v-for="(n, i) in SIG_NAMES" :key="i" :value="i">{{ n }}</option>
+            </select>
+            <button
+              class="btn btn-sm btn-ghost"
+              @click="sync.retryStation(sync.selectedIdx, stations, sessionId)"
+              :disabled="sync.loading"
+            >Reintentar fallos</button>
+          </div>
         </div>
-        <div class="overflow-y-auto" style="max-height:300px;">
+        <div class="overflow-y-auto" style="max-height:280px;">
           <table class="w-full text-xs font-mono">
             <thead class="sticky top-0 bg-white border-b border-g-200">
               <tr class="text-g-500">
@@ -152,7 +139,9 @@
               >
                 <td class="px-3 py-0.5 text-g-600">{{ rec.ptr }}</td>
                 <td class="px-3 py-0.5 text-right text-g-700">
-                  {{ rec.valid && rec.modes?.[sync.chartSig] ? rec.modes[sync.chartSig][rocStore.dbEndian]?.toFixed(4) : '—' }}
+                  {{ rec.valid && rec.modes?.[sync.chartSig]
+                    ? rec.modes[sync.chartSig][rocStore.dbEndian]?.toFixed(4)
+                    : '—' }}
                 </td>
                 <td class="px-3 py-0.5 text-center">
                   <span v-if="rec.valid" class="text-forest">●</span>
@@ -173,40 +162,28 @@ import axios from 'axios'
 import { useSyncStore } from '../stores/sync'
 import { useRocStore } from '../stores/roc'
 import { useSessionId } from '../services/websocket'
-import AreaChart from '../components/sync/AreaChart.vue'
+import MultiSignalChart from '../components/sync/MultiSignalChart.vue'
 
-const sync = useSyncStore()
-const rocStore = useRocStore()
+const sync      = useSyncStore()
+const rocStore  = useRocStore()
 const sessionId = useSessionId()
+const stations  = ref([])
 
-const stations = ref([])
-
-const SIG_NAMES = ['Flow Min', 'Raw Pulses', 'Pf PSI', 'Tf DEG F', 'Multiplier', 'Uncorr Vol MCF', 'Vol Accum MCF', 'Energy MMBTU']
-const SIG_COLORS = ['#7AD400','#0ea5e9','#f59e0b','#ec4899','#8b5cf6','#14b8a6','#f97316','#007934']
-const sigColor = i => SIG_COLORS[i % SIG_COLORS.length]
+const SIG_NAMES = [
+  'Flow Min', 'Raw Pulses', 'Pf PSI', 'Tf DEG F',
+  'Multiplier', 'Uncorr Vol MCF', 'Vol Accum MCF', 'Energy MMBTU',
+]
 
 const currentRecords = computed(() =>
   sync.selectedIdx ? sync.stationResults[sync.selectedIdx] : null
 )
 
-const stats = computed(() => {
-  const records = currentRecords.value
-  if (!records) return { min: '—', max: '—', avg: '—', ok: 0 }
-  const vals = records.map(r => {
-    if (!r?.valid || !r.modes?.[sync.chartSig]) return null
-    const v = r.modes[sync.chartSig][rocStore.dbEndian]
-    return (v == null || !isFinite(v)) ? null : v
-  }).filter(v => v !== null)
-  if (!vals.length) return { min: '—', max: '—', avg: '—', ok: 0 }
-  const mn = Math.min(...vals), mx = Math.max(...vals)
-  const avg = vals.reduce((a, b) => a + b, 0) / vals.length
-  return { min: mn.toFixed(3), max: mx.toFixed(3), avg: avg.toFixed(3), ok: vals.length }
-})
-
 async function loadStations() {
   try {
     const { data } = await axios.get('/api/config')
     stations.value = data.stations || []
+    if (!sync.selectedNames.length)
+      sync.selectedNames = stations.value.map(s => s.name)
   } catch (_) {}
 }
 
