@@ -16,9 +16,9 @@
         >{{ lvl }}</button>
       </div>
 
-      <span class="text-xs ml-auto" style="color:#4d6b4d;">{{ logsStore.filteredLogs.length }} líneas</span>
-      <button class="text-xs px-1.5" style="color:#4d6b4d;" @click="logsStore.clearLogs()">limpiar</button>
-      <button class="text-xs" style="color:#4d6b4d;" @click="logsStore.logOpen = !logsStore.logOpen">
+      <span class="text-xs ml-auto" style="color:#8aaa8a;">{{ logsStore.filteredLogs.length }} líneas</span>
+      <button class="text-xs px-1.5" style="color:#8aaa8a;" @click="logsStore.clearLogs()">limpiar</button>
+      <button class="text-xs" style="color:#8aaa8a;" @click="logsStore.logOpen = !logsStore.logOpen">
         {{ logsStore.logOpen ? '▼' : '▲' }}
       </button>
     </div>
@@ -33,10 +33,10 @@
         v-for="(m, i) in logsStore.filteredLogs" :key="i"
         class="flex gap-2 leading-5"
       >
-        <span class="shrink-0 w-[90px]" style="color:#4d6b4d;">{{ m.ts }}</span>
+        <span class="shrink-0 w-[90px]" style="color:#8aaa8a;">{{ m.ts }}</span>
         <span class="shrink-0 w-[42px] font-semibold" :class="`log-${m.level}`">{{ m.level }}</span>
         <span style="color:#c5cfc5;">{{ m.msg }}</span>
-        <span v-if="m.dur" class="ml-1" style="color:#4d6b4d;">[{{ m.dur }}]</span>
+        <span v-if="m.dur" class="ml-1" style="color:#8aaa8a;">[{{ m.dur }}]</span>
       </div>
     </div>
   </div>

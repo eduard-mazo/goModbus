@@ -69,6 +69,7 @@ func QueryHandler(c *gin.Context) {
 	}
 
 	client := modbus.NewModbusClient(req.IP, req.Port, req.SlaveID, req.Endianness)
+	client.SID = c.GetHeader("X-Session-ID")
 	if err := client.Connect(); err != nil {
 		c.JSON(http.StatusServiceUnavailable, QueryResponse{Error: err.Error()})
 		return

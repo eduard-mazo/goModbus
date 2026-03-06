@@ -4,7 +4,7 @@
     <!-- Logo -->
     <div class="px-4 py-3 border-b border-g-900" style="border-color:#1e2a1f;">
       <div class="text-white font-bold text-sm tracking-wide">ROC Modbus Expert</div>
-      <div class="text-xs mt-0.5" style="color:#4d6b4d;">EPM · v4.0</div>
+      <div class="text-xs mt-0.5" style="color:#8aaa8a;">EPM · v4.0</div>
     </div>
 
     <!-- Scrollable content -->
@@ -15,21 +15,21 @@
         <div class="sbar-label">Conexión TCP</div>
         <div class="grid grid-cols-2 gap-2 mb-2">
           <div>
-            <label class="lbl" style="color:#4d6b4d;">IP</label>
+            <label class="lbl" style="color:#8aaa8a;">IP</label>
             <input class="fi fi-sm" v-model="conn.ip" placeholder="192.168.1.1" style="background:#141c14;border-color:#2a3d2a;color:#d4e8d4;" />
           </div>
           <div>
-            <label class="lbl" style="color:#4d6b4d;">Puerto</label>
+            <label class="lbl" style="color:#8aaa8a;">Puerto</label>
             <input class="fi fi-sm" v-model.number="conn.port" type="number" min="1" max="65535" style="background:#141c14;border-color:#2a3d2a;color:#d4e8d4;" />
           </div>
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="lbl" style="color:#4d6b4d;">Slave ID</label>
+            <label class="lbl" style="color:#8aaa8a;">Slave ID</label>
             <input class="fi fi-sm" v-model.number="conn.slaveId" type="number" min="0" max="247" style="background:#141c14;border-color:#2a3d2a;color:#d4e8d4;" />
           </div>
           <div>
-            <label class="lbl" style="color:#4d6b4d;">Endian</label>
+            <label class="lbl" style="color:#8aaa8a;">Endian</label>
             <select class="fs fi-sm" v-model="conn.endian" style="background:#141c14;border-color:#2a3d2a;color:#d4e8d4;">
               <option value="abcd">ABCD (BE)</option>
               <option value="dcba">DCBA (LE)</option>
@@ -50,7 +50,7 @@
           </button>
         </div>
 
-        <div v-if="stations.length === 0" class="text-xs py-2" style="color:#4d6b4d;">
+        <div v-if="stations.length === 0" class="text-xs py-2" style="color:#8aaa8a;">
           Sin estaciones en config.yaml
         </div>
 
@@ -68,7 +68,7 @@
           ></span>
           <div class="min-w-0">
             <div class="text-xs font-semibold truncate" style="color:#c5cfc5;">{{ st.name }}</div>
-            <div class="font-mono" style="font-size:10px;color:#4d6b4d;">{{ st.ip }}:{{ st.port }} · ID {{ st.id }}</div>
+            <div class="font-mono" style="font-size:10px;color:#8aaa8a;">{{ st.ip }}:{{ st.port }} · ID {{ st.id }}</div>
           </div>
         </div>
       </div>

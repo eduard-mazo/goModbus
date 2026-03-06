@@ -2,7 +2,7 @@ modbus_client
 modbus_client.exe
 modbus_client-debug
 goModbus
-server
+/server
 session.md
 logs/
 dist/

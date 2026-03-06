@@ -9,14 +9,9 @@ import (
 )
 
 // LogFunc is called for Modbus-level events (TX/RX frames, connection events).
+// sid is the session ID of the requesting client; empty string means broadcast to all.
 // Set this at startup to wire the modbus package into the application logger.
-var LogFunc func(level, message string, raw []byte, duration time.Duration, pv *float64, dbh string)
-
-func log(level, message string, raw []byte, duration time.Duration, pv *float64, dbh string) {
-	if LogFunc != nil {
-		LogFunc(level, message, raw, duration, pv, dbh)
-	}
-}
+var LogFunc func(sid, level, message string, raw []byte, duration time.Duration, pv *float64, dbh string)
 
 // ModbusClient manages a single Modbus TCP connection
 type ModbusClient struct {
@@ -27,7 +22,14 @@ type ModbusClient struct {
 	Timeout       time.Duration
 	Conn          net.Conn
 	TransactionID uint16
-	Silent        bool // when true, suppresses TX/RX INFO/DEBUG logs (used during bulk sync)
+	Silent        bool   // when true, suppresses TX/RX INFO/DEBUG logs (used during bulk sync)
+	SID           string // session ID — routes logs only to the owning WebSocket client
+}
+
+func (c *ModbusClient) log(level, message string, raw []byte, duration time.Duration, pv *float64, dbh string) {
+	if LogFunc != nil {
+		LogFunc(c.SID, level, message, raw, duration, pv, dbh)
+	}
 }
 
 func NewModbusClient(host string, port int, unitID byte, endian Endianness) *ModbusClient {
@@ -36,21 +38,21 @@ func NewModbusClient(host string, port int, unitID byte, endian Endianness) *Mod
 		Port:          port,
 		UnitID:        unitID,
 		Endian:        endian,
-		Timeout:       10 * time.Second,
+		Timeout:       15 * time.Second,
 		TransactionID: 1,
 	}
 }
 
 func (c *ModbusClient) Connect() error {
 	address := net.JoinHostPort(c.Host, fmt.Sprintf("%d", c.Port))
-	conn, err := net.DialTimeout("tcp", address, 10*time.Second)
+	conn, err := net.DialTimeout("tcp", address, 15*time.Second)
 	if err != nil {
-		log("ERROR", fmt.Sprintf("TCP fallo al conectar %s: %v", address, err), nil, 0, nil, "")
+		c.log("ERROR", fmt.Sprintf("TCP fallo al conectar %s: %v", address, err), nil, 0, nil, "")
 		return fmt.Errorf("conexión a %s falló: %w", address, err)
 	}
 	c.Conn = conn
 	if !c.Silent {
-		log("INFO", fmt.Sprintf("Conectado a %s (UnitID=%d)", address, c.UnitID), nil, 0, nil, "")
+		c.log("INFO", fmt.Sprintf("Conectado a %s (UnitID=%d)", address, c.UnitID), nil, 0, nil, "")
 	}
 	return nil
 }
@@ -58,7 +60,7 @@ func (c *ModbusClient) Connect() error {
 func (c *ModbusClient) Close() {
 	if c.Conn != nil {
 		c.Conn.Close()
-		log("INFO", "Conexión cerrada", nil, 0, nil, "")
+		c.log("INFO", "Conexión cerrada", nil, 0, nil, "")
 	}
 }
 
@@ -71,14 +73,14 @@ func (c *ModbusClient) SendRaw(frame []byte) ([]byte, time.Duration, error) {
 	c.Conn.SetDeadline(time.Now().Add(c.Timeout))
 	if _, err := c.Conn.Write(frame); err != nil {
 		elapsed := time.Since(start)
-		log("ERROR", "RAW TX: "+err.Error(), nil, elapsed, nil, "")
+		c.log("ERROR", "RAW TX: "+err.Error(), nil, elapsed, nil, "")
 		return nil, elapsed, err
 	}
 	buf := make([]byte, 512)
 	n, err := c.Conn.Read(buf)
 	elapsed := time.Since(start)
 	if err != nil {
-		log("ERROR", "RAW RX: "+err.Error(), nil, elapsed, nil, "")
+		c.log("ERROR", "RAW RX: "+err.Error(), nil, elapsed, nil, "")
 		return nil, elapsed, err
 	}
 	return buf[:n], elapsed, nil
@@ -101,11 +103,11 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 	start := time.Now()
 
 	if !c.Silent {
-		log("DEBUG", fmt.Sprintf("TX FC=0x%02X addr=%d qty=%d", fc, addr, qty), req, 0, nil, "")
+		c.log("DEBUG", fmt.Sprintf("TX FC=0x%02X addr=%d qty=%d", fc, addr, qty), req, 0, nil, "")
 	}
 
 	if _, err := c.Conn.Write(req); err != nil {
-		log("ERROR", fmt.Sprintf("TX error FC=0x%02X addr=%d: %v", fc, addr, err), nil, 0, nil, "")
+		c.log("ERROR", fmt.Sprintf("TX error FC=0x%02X addr=%d: %v", fc, addr, err), nil, 0, nil, "")
 		return nil, req, 0, fmt.Errorf("error TX: %w", err)
 	}
 
@@ -114,14 +116,14 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 	elapsed := time.Since(start)
 
 	if err != nil {
-		log("ERROR", fmt.Sprintf("RX error FC=0x%02X addr=%d [%dms]: %v", fc, addr, elapsed.Milliseconds(), err), nil, elapsed, nil, "")
+		c.log("ERROR", fmt.Sprintf("RX error FC=0x%02X addr=%d [%dms]: %v", fc, addr, elapsed.Milliseconds(), err), nil, elapsed, nil, "")
 		return nil, req, elapsed, fmt.Errorf("error RX: %w", err)
 	}
 
 	resp := buf[:n]
 
 	if n < 8 {
-		log("ERROR", fmt.Sprintf("Respuesta incompleta FC=0x%02X: %d bytes (mín 8)", fc, n), resp, elapsed, nil, "")
+		c.log("ERROR", fmt.Sprintf("Respuesta incompleta FC=0x%02X: %d bytes (mín 8)", fc, n), resp, elapsed, nil, "")
 		return nil, req, elapsed, fmt.Errorf("respuesta incompleta (%d bytes)", n)
 	}
 
@@ -135,12 +137,12 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 		if desc == "" {
 			desc = "Error desconocido"
 		}
-		log("ERROR", fmt.Sprintf("Excepción Modbus 0x%02X: %s", code, desc), resp, elapsed, nil, "")
+		c.log("ERROR", fmt.Sprintf("Excepción Modbus 0x%02X: %s", code, desc), resp, elapsed, nil, "")
 		return nil, req, elapsed, fmt.Errorf("excepción 0x%02X: %s", code, desc)
 	}
 
 	if !c.Silent {
-		log("INFO", fmt.Sprintf("RX OK %dms | %d bytes datos", elapsed.Milliseconds(), n), resp, elapsed, nil, "")
+		c.log("INFO", fmt.Sprintf("RX OK %dms | %d bytes datos", elapsed.Milliseconds(), n), resp, elapsed, nil, "")
 	}
 	c.TransactionID++
 

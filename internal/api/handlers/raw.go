@@ -42,7 +42,9 @@ func RawHandler(c *gin.Context) {
 		return
 	}
 
+	sid := c.GetHeader("X-Session-ID")
 	client := modbus.NewModbusClient(req.IP, req.Port, frame[6], modbus.BigEndian)
+	client.SID = sid
 	defer client.Close()
 
 	recv, elapsed, sendErr := client.SendRaw(frame)
@@ -56,8 +58,11 @@ func RawHandler(c *gin.Context) {
 		resp.RecvHex = strings.ToUpper(hex.EncodeToString(recv))
 	}
 
-	logger.BroadcastLog("INFO",
-		fmt.Sprintf("RAW → %s:%d  %d bytes  RTT %dms", req.IP, req.Port, len(frame), resp.ElapsedMs),
-		frame, elapsed, nil, resp.RecvHex)
+	logger.SessionBroadcast(sid, logger.LogMessage{
+		Level:        "INFO",
+		Message:      fmt.Sprintf("RAW → %s:%d  %d bytes  RTT %dms", req.IP, req.Port, len(frame), resp.ElapsedMs),
+		RawHex:       strings.ToUpper(hex.EncodeToString(frame)),
+		DataBlockHex: resp.RecvHex,
+	})
 	c.JSON(http.StatusOK, resp)
 }

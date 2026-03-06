@@ -175,7 +175,6 @@ func syncStation(sid string, s config.StationConfig) {
 		Message:  fmt.Sprintf("Sync Completo: %s (%d ms)", s.Name, elapsed),
 		Progress: prog,
 	})
-	logger.BroadcastLog("INFO", fmt.Sprintf("Sync Completo: %s (%d ms)", s.Name, elapsed), nil, 0, nil, "")
 }
 
 type PartialSyncRequest struct {

@@ -1,4 +1,4 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
 import QueryView from '../views/QueryView.vue'
 import RocView from '../views/RocView.vue'
 import SyncView from '../views/SyncView.vue'
@@ -13,6 +13,6 @@ const routes = [
 ]
 
 export default createRouter({
-  history: createWebHashHistory(),
+  history: createWebHistory(),
   routes,
 })

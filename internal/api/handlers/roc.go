@@ -52,7 +52,9 @@ func RocHandler(c *gin.Context) {
 		req.PtrQty = 2
 	}
 
+	sid := c.GetHeader("X-Session-ID")
 	client := modbus.NewModbusClient(req.IP, req.Port, req.SlaveID, req.PtrEndian)
+	client.SID = sid
 	if err := client.Connect(); err != nil {
 		c.JSON(http.StatusServiceUnavailable, ROCResponse{Error: err.Error()})
 		return
@@ -85,7 +87,7 @@ func RocHandler(c *gin.Context) {
 		} else if len(data) >= 2 {
 			resp.PointerValue = float64(int16(binary.BigEndian.Uint16(data)))
 		}
-		logger.BroadcastLog("INFO", fmt.Sprintf("Puntero ROC leído: %.0f", resp.PointerValue), data, 0, &resp.PointerValue, "")
+		logger.SessionBroadcast(sid, logger.LogMessage{Level: "INFO", Message: fmt.Sprintf("Puntero ROC leído: %.0f", resp.PointerValue), RawHex: fmt.Sprintf("%X", data), PointerValue: &resp.PointerValue})
 	} else if req.Mode == "hist" && req.ManualPtr != nil {
 		resp.PointerValue = *req.ManualPtr
 	}
@@ -110,7 +112,7 @@ func RocHandler(c *gin.Context) {
 		for i := range resp.DBModes {
 			resp.DBModes[i].Sanitize()
 		}
-		logger.BroadcastLog("INFO", "Histórico ROC leído", data, 0, &resp.PointerValue, resp.DBHex)
+		logger.SessionBroadcast(sid, logger.LogMessage{Level: "INFO", Message: "Histórico ROC leído", PointerValue: &resp.PointerValue, DataBlockHex: resp.DBHex})
 	}
 
 	resp.ElapsedMs = totalMs
@@ -161,7 +163,9 @@ func RocHistory24Handler(c *gin.Context) {
 		req.BufSize = 840
 	}
 
+	sid := c.GetHeader("X-Session-ID")
 	client := modbus.NewModbusClient(req.IP, req.Port, req.SlaveID, req.PtrEndian)
+	client.SID = sid
 	if err := client.Connect(); err != nil {
 		c.JSON(http.StatusServiceUnavailable, History24Response{Error: err.Error()})
 		return
@@ -190,13 +194,13 @@ func RocHistory24Handler(c *gin.Context) {
 		currentPtr = uint16(int16(binary.BigEndian.Uint16(ptrData)))
 	}
 	resp.CurrentPtr = currentPtr
-	logger.BroadcastLog("INFO", fmt.Sprintf("History24: puntero actual = %d", currentPtr), ptrData, elapsed, nil, "")
+	logger.SessionBroadcast(sid, logger.LogMessage{Level: "INFO", Message: fmt.Sprintf("History24: puntero actual = %d", currentPtr), RawHex: fmt.Sprintf("%X", ptrData)})
 
 	// Step 2 – Determine current hour
 	currentHour := time.Now().Hour()
 	if req.CurrentHour != nil {
 		currentHour = *req.CurrentHour
-		logger.BroadcastLog("INFO", fmt.Sprintf("History24: hora manual = %d", currentHour), nil, 0, nil, "")
+		logger.SessionBroadcast(sid, logger.LogMessage{Level: "INFO", Message: fmt.Sprintf("History24: hora manual = %d", currentHour)})
 	} else if req.DBQty >= 3 {
 		client.Endian = req.DBEndian
 		recData, _, recElapsed, recErr := client.Execute(modbus.FCReadHoldingRegisters, req.DBAddr, currentPtr, nil)
@@ -207,12 +211,12 @@ func RocHistory24Handler(c *gin.Context) {
 				h := int(regs[2])
 				if h >= 0 && h <= 23 {
 					currentHour = h
-					logger.BroadcastLog("INFO", fmt.Sprintf("History24: hora leída del dispositivo = %d", currentHour), recData, recElapsed, nil, "")
+					logger.SessionBroadcast(sid, logger.LogMessage{Level: "INFO", Message: fmt.Sprintf("History24: hora leída del dispositivo = %d", currentHour)})
 				}
 			}
 		}
 	} else {
-		logger.BroadcastLog("INFO", fmt.Sprintf("History24: hora del sistema = %d", currentHour), nil, 0, nil, "")
+		logger.SessionBroadcast(sid, logger.LogMessage{Level: "INFO", Message: fmt.Sprintf("History24: hora del sistema = %d", currentHour)})
 	}
 	resp.CurrentHour = currentHour
 
@@ -220,10 +224,9 @@ func RocHistory24Handler(c *gin.Context) {
 	bufSize := int(req.BufSize)
 	startPtr := (int(currentPtr) - currentHour - 24 + 2*bufSize) % bufSize
 	resp.StartPtr = uint16(startPtr)
-	logger.BroadcastLog("INFO",
-		fmt.Sprintf("History24: ptr=%d hora=%d → ptr_ayer_00:00=%d  fórmula=(%d−%d−24+%d)%%%d",
-			currentPtr, currentHour, startPtr, currentPtr, currentHour, 2*bufSize, bufSize),
-		nil, 0, nil, "")
+	logger.SessionBroadcast(sid, logger.LogMessage{Level: "INFO",
+		Message: fmt.Sprintf("History24: ptr=%d hora=%d → ptr_ayer_00:00=%d  fórmula=(%d−%d−24+%d)%%%d",
+			currentPtr, currentHour, startPtr, currentPtr, currentHour, 2*bufSize, bufSize)})
 
 	// Step 4 – Fetch 24 hourly records in parallel (2 workers)
 	resp.Records = make([]modbus.HourRecord, 24)
@@ -242,6 +245,7 @@ func RocHistory24Handler(c *gin.Context) {
 		go func() {
 			defer wg.Done()
 			wClient := modbus.NewModbusClient(req.IP, req.Port, req.SlaveID, req.DBEndian)
+			wClient.SID = sid
 			if err := wClient.Connect(); err != nil {
 				return
 			}
@@ -253,7 +257,7 @@ func RocHistory24Handler(c *gin.Context) {
 
 				rec := modbus.HourRecord{Hour: j.h, Ptr: ptr}
 				if err != nil {
-					logger.BroadcastLog("WARN", fmt.Sprintf("History24 h=%02d ptr=%d: %s", j.h, ptr, err.Error()), nil, 0, nil, "")
+					logger.SessionBroadcast(sid, logger.LogMessage{Level: "WARN", Message: fmt.Sprintf("History24 h=%02d ptr=%d: %s", j.h, ptr, err.Error())})
 				} else {
 					rec.Valid = true
 					rec.Hex = fmt.Sprintf("%X", data)
@@ -277,6 +281,6 @@ func RocHistory24Handler(c *gin.Context) {
 	wg.Wait()
 
 	resp.ElapsedMs = time.Since(start).Milliseconds()
-	logger.BroadcastLog("INFO", fmt.Sprintf("History24 completo: %dms (paralelo)", resp.ElapsedMs), nil, 0, nil, "")
+	logger.SessionBroadcast(sid, logger.LogMessage{Level: "INFO", Message: fmt.Sprintf("History24 completo: %dms (paralelo)", resp.ElapsedMs)})
 	c.JSON(http.StatusOK, resp)
 }
