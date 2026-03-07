@@ -50,11 +50,16 @@ func DecodeBits(data []byte, qty uint16) []bool {
 }
 
 // HourRecord represents one ROC circular-buffer slot (840 total per station).
+// DateRaw / TimeRaw are the raw uint16 values from the first two device registers.
+// ROC date encoding: bit[15:9]=year(2000+), bit[8:5]=month, bit[4:0]=day
+// ROC time encoding: bit[15:11]=hour, bit[10:5]=minute, bit[4:0]=second/2
 type HourRecord struct {
-	Hour  int           `json:"hour"`
-	Ptr   uint16        `json:"ptr"`
-	Hex   string        `json:"hex"`
-	Value float32       `json:"value"`         // first float in db_endian (bytes 4+)
-	Modes []Float32Modes `json:"modes,omitempty"` // all 4 endianness decodings (bytes 4+)
-	Valid bool          `json:"valid"`
+	Hour    int            `json:"hour"`
+	Ptr     uint16         `json:"ptr"`
+	Hex     string         `json:"hex"`
+	Value   float32        `json:"value"`           // first float in db_endian (bytes 4+)
+	Modes   []Float32Modes `json:"modes,omitempty"` // all 4 endianness decodings (bytes 4+)
+	Valid   bool           `json:"valid"`
+	DateRaw uint16         `json:"date_raw,omitempty"` // bytes 0-1: ROC date register
+	TimeRaw uint16         `json:"time_raw,omitempty"` // bytes 2-3: ROC time register
 }

@@ -77,12 +77,11 @@
           </text>
         </g>
 
-        <!-- X axis tick labels -->
-        <text
-          v-for="tick in xTicks" :key="tick.ri"
-          :x="tick.x" :y="H - 4"
-          text-anchor="middle" fill="#9ab59a" font-size="9"
-        >{{ tick.label }}</text>
+        <!-- X axis tick labels (two lines: time + date) -->
+        <g v-for="tick in xTicks" :key="tick.ri">
+          <text :x="tick.x" :y="H - 14" text-anchor="middle" fill="#9ab59a" font-size="9">{{ tick.timeLabel }}</text>
+          <text :x="tick.x" :y="H - 3"  text-anchor="middle" fill="#b8ccb8" font-size="8">{{ tick.dateLabel }}</text>
+        </g>
 
         <!-- Signal fills + lines -->
         <g v-for="(sig, i) in signals" :key="i">
@@ -124,10 +123,7 @@
       >
         <div class="px-3 py-2 border-b border-g-100 flex items-baseline gap-2">
           <span class="font-mono font-bold text-g-800">Ptr {{ tooltip.ri }}</span>
-          <span class="text-g-400">
-            D{{ Math.floor(tooltip.ri / 24) + 1 }} ·
-            {{ String(tooltip.ri % 24).padStart(2, '0') }}:00
-          </span>
+          <span class="text-g-400">{{ tooltip.dateStr }}</span>
         </div>
         <div class="px-3 py-2 space-y-1">
           <div
@@ -184,7 +180,7 @@ const H  = 230   // viewBox height
 const ML = 36    // left margin  (Y labels)
 const MR = 8     // right margin
 const MT = 12    // top margin
-const MB = 26    // bottom margin (X labels)
+const MB = 36    // bottom margin (X labels — two lines)
 const CW = W - ML - MR   // chart width
 const CH = H - MT - MB   // chart height
 
@@ -264,6 +260,37 @@ function pan(delta) {
   viewStart.value = Math.max(0, Math.min(840 - viewSize.value, viewStart.value + delta))
 }
 
+// ── ROC date/time decoding ────────────────────────────────────────────────────
+// ROC date register: bit[15:9]=year(+2000), bit[8:5]=month, bit[4:0]=day
+// ROC time register: bit[15:11]=hour, bit[10:5]=minute, bit[4:0]=second/2
+function parseRocDate(dateRaw, timeRaw) {
+  if (!dateRaw && !timeRaw) return null
+  const year   = ((dateRaw >> 9) & 0x7F) + 2000
+  const month  = (dateRaw >> 5) & 0x0F
+  const day    = dateRaw & 0x1F
+  const hour   = (timeRaw >> 11) & 0x1F
+  const minute = (timeRaw >> 5) & 0x3F
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 2000 || year > 2099) return null
+  return new Date(year, month - 1, day, hour, minute)
+}
+
+function fmtDate(d) {
+  if (!d) return null
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mn = String(d.getMinutes()).padStart(2, '0')
+  return { date: `${dd}/${mm}`, time: `${hh}:${mn}`, full: `${dd}/${mm} ${hh}:${mn}` }
+}
+
+// Parsed Date per record index (null if record invalid or date not available)
+const recDates = computed(() => {
+  if (!props.records?.length) return []
+  return props.records.map(r =>
+    (r?.valid) ? parseRocDate(r.date_raw, r.time_raw) : null
+  )
+})
+
 // ── Raw values from records ──────────────────────────────────────────────────
 // Cached computed: [sigIdx][recordIdx] → float | null
 // Recomputed only when records or endian change (not on pan/zoom).
@@ -326,20 +353,21 @@ const paths = computed(() => signals.value.map((_, i) => buildPath(i)))
 
 // ── X-axis ticks ─────────────────────────────────────────────────────────────
 const xTicks = computed(() => {
-  const sz  = viewSize.value
-  const st  = viewStart.value
-  const div = Math.max(1, sz - 1)
-  // Choose a tick interval that gives ~6-10 ticks
-  const iv  = sz > 336 ? 48 : sz > 168 ? 24 : sz > 48 ? 12 : sz > 24 ? 6 : 4
+  const sz    = viewSize.value
+  const st    = viewStart.value
+  const div   = Math.max(1, sz - 1)
+  const iv    = sz > 336 ? 48 : sz > 168 ? 24 : sz > 48 ? 12 : sz > 24 ? 6 : 4
+  const dates = recDates.value
   const ticks = []
   for (let i = 0; i < sz; i++) {
     const ri = st + i
     if (ri % iv !== 0) continue
-    const x     = (ML + i / div * CW).toFixed(1)
-    const day   = Math.floor(ri / 24) + 1
-    const hour  = ri % 24
-    const label = sz > 168 ? `D${day}` : `${String(hour).padStart(2, '0')}h`
-    ticks.push({ ri, x, label })
+    const x  = (ML + i / div * CW).toFixed(1)
+    const d  = dates[ri] ? fmtDate(dates[ri]) : null
+    // timeLabel: hour line; dateLabel: date line below
+    const timeLabel = d ? d.time : `${String(ri % 24).padStart(2, '0')}h`
+    const dateLabel = d ? d.date : `D${Math.floor(ri / 24) + 1}`
+    ticks.push({ ri, x, timeLabel, dateLabel })
   }
   return ticks
 })
@@ -349,7 +377,7 @@ const svgRef       = ref(null)
 const containerRef = ref(null)
 const _dragging    = ref(false)
 
-const tooltip = ref({ visible: false, x: 0, ri: 0, rows: [], dots: [] })
+const tooltip = ref({ visible: false, x: 0, ri: 0, rows: [], dots: [], dateStr: '' })
 
 const tooltipPos = computed(() => {
   const el = containerRef.value
@@ -393,7 +421,9 @@ function onMouseMove(e) {
       val: v !== null ? v.toFixed(4) : '—' })
   })
 
-  tooltip.value = { visible: true, x: cx, ri, rows, dots }
+  const d = recDates.value[ri] ? fmtDate(recDates.value[ri]) : null
+  const dateStr = d ? d.full : `D${Math.floor(ri / 24) + 1} · ${String(ri % 24).padStart(2, '0')}:00`
+  tooltip.value = { visible: true, x: cx, ri, rows, dots, dateStr }
 }
 
 // ── Scroll-wheel zoom (cursor-anchored) ──────────────────────────────────────

@@ -3,80 +3,104 @@ stations:
     ip: "10.155.150.201"
     port: 502
     id: 10
-    endian: "cdab" # (Word Swapped) es común
+    endian: "cdab"
     data_type: "float32"
-    pointer_address: 10000 # Dirección para leer el apuntador
-    base_data_address: 700 # Dirección base para los datos
     data_registers_count: 2
+    # EET TASAJERA tiene 4 medidores distribuidos en dos bloques de puntero
+    medidores:
+      - label: 1
+        name: "M1"
+        pointer_address: 10000
+        base_data_address: 700
+      - label: 2
+        name: "M2"
+        pointer_address: 10000
+        base_data_address: 704
+      - label: 3
+        name: "M3"
+        pointer_address: 10001
+        base_data_address: 708
+      - label: 4
+        name: "M4"
+        pointer_address: 10001
+        base_data_address: 712
+
   - name: "LLANOS"
     ip: "10.50.184.208"
     port: 502
     id: 2
-    endian: "dcba" # (Little Endian)
+    endian: "dcba"
     data_type: "float32"
-    pointer_address: 10000 # Dirección para leer el apuntador
-    base_data_address: 700 # Dirección base para los datos
+    pointer_address: 10000
+    base_data_address: 700
     data_registers_count: 1
+
   - name: "YOLOMBO"
     ip: "10.156.168.116"
     port: 502
     id: 1
-    endian: "cdab" # (Little Endian)
+    endian: "cdab"
     data_type: "float32"
-    pointer_address: 10000 # Dirección para leer el apuntador
-    base_data_address: 700 # Dirección base para los datos
+    pointer_address: 10000
+    base_data_address: 700
     data_registers_count: 2
+
   - name: "SANTO DOMINGO"
     ip: "10.155.115.46"
     port: 502
     id: 1
-    endian: "cdab" # (Little Endian)
+    endian: "cdab"
     data_type: "float32"
-    pointer_address: 10000 # Dirección para leer el apuntador
-    base_data_address: 700 # Dirección base para los datos
+    pointer_address: 10000
+    base_data_address: 700
     data_registers_count: 2
+
   - name: "SAN VICENTE"
     ip: "10.155.249.194"
     port: 502
     id: 1
-    endian: "cdab" # (Little Endian)
+    endian: "cdab"
     data_type: "float32"
-    pointer_address: 10000 # Dirección para leer el apuntador
-    base_data_address: 700 # Dirección base para los datos
+    pointer_address: 10000
+    base_data_address: 700
     data_registers_count: 2
+
   - name: "PARQUE DE LAS AGUAS"
     ip: "10.14.224.5"
     port: 502
     id: 1
-    endian: "cdab" # (Little Endian)
+    endian: "cdab"
     data_type: "float32"
-    pointer_address: 10000 # Dirección para leer el apuntador
-    base_data_address: 700 # Dirección base para los datos
+    pointer_address: 10000
+    base_data_address: 700
     data_registers_count: 2
+
   - name: "NARE"
     ip: "10.14.201.3"
     port: 502
     id: 1
-    endian: "cdab" # (Little Endian)
+    endian: "cdab"
     data_type: "float32"
-    pointer_address: 10000 # Dirección para leer el apuntador
-    base_data_address: 700 # Dirección base para los datos
+    pointer_address: 10000
+    base_data_address: 700
     data_registers_count: 2
+
   - name: "MACEO"
     ip: "10.156.148.8"
     port: 502
     id: 1
-    endian: "cdab" # (Little Endian)
+    endian: "cdab"
     data_type: "float32"
-    pointer_address: 10000 # Dirección para leer el apuntador
-    base_data_address: 700 # Dirección base para los datos
+    pointer_address: 10000
+    base_data_address: 700
     data_registers_count: 2
+
   - name: "FELISA"
     ip: "10.155.249.193"
     port: 502
     id: 1
-    endian: "cdab" # (Little Endian)
+    endian: "cdab"
     data_type: "float32"
-    pointer_address: 10000 # Dirección para leer el apuntador
-    base_data_address: 700 # Dirección base para los datos
+    pointer_address: 10000
+    base_data_address: 700
     data_registers_count: 2

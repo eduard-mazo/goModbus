@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"sync"
@@ -17,17 +18,55 @@ type SyncRequest struct {
 	Stations []string `json:"stations"`
 }
 
-type StationSyncResult struct {
-	Station string              `json:"station"`
-	IP      string              `json:"ip"`
-	Records []modbus.HourRecord `json:"records"`
-	Elapsed int64               `json:"elapsed_ms"`
-	Error   string              `json:"error,omitempty"`
+// syncTask is a flat, self-contained description of one sync unit.
+// A station with N medidores produces N tasks; a single-meter station produces 1.
+type syncTask struct {
+	Key     string            // display key used in progress events: "STATION" or "STATION / M1"
+	Station string            // parent station name
+	IP      string
+	Port    int
+	UnitID  byte
+	Endian  modbus.Endianness
+	PtrAddr uint16
+	DBAddr  uint16
+}
+
+// expandTasks converts the filtered list of StationConfigs into syncTasks,
+// expanding multi-medidor stations into one task per medidor.
+func expandTasks(stations []config.StationConfig) []syncTask {
+	var tasks []syncTask
+	for _, s := range stations {
+		if len(s.Medidores) > 0 {
+			for _, m := range s.Medidores {
+				tasks = append(tasks, syncTask{
+					Key:     fmt.Sprintf("%s / %s", s.Name, m.Name),
+					Station: s.Name,
+					IP:      s.IP,
+					Port:    s.Port,
+					UnitID:  s.ID,
+					Endian:  s.Endian,
+					PtrAddr: m.PointerAddress,
+					DBAddr:  m.DBAddress,
+				})
+			}
+		} else {
+			tasks = append(tasks, syncTask{
+				Key:     s.Name,
+				Station: s.Name,
+				IP:      s.IP,
+				Port:    s.Port,
+				UnitID:  s.ID,
+				Endian:  s.Endian,
+				PtrAddr: s.PointerAddress,
+				DBAddr:  s.DBAddress,
+			})
+		}
+	}
+	return tasks
 }
 
 // FullSyncHandler starts a background sync and returns immediately.
-// Progress and results are delivered to the requesting client via WebSocket
-// using session-scoped messages (SID from X-Session-ID header).
+// Progress is streamed to the requesting client via WebSocket (SID-scoped).
 func FullSyncHandler(c *gin.Context) {
 	var req SyncRequest
 	_ = c.ShouldBindJSON(&req)
@@ -49,41 +88,41 @@ func FullSyncHandler(c *gin.Context) {
 		filtered = cfg.Stations
 	}
 
-	if len(filtered) == 0 {
+	tasks := expandTasks(filtered)
+	if len(tasks) == 0 {
 		c.JSON(http.StatusOK, gin.H{"error": "no hay estaciones seleccionadas"})
 		return
 	}
 
-	// Fire-and-forget: respond immediately, stream progress over WS
 	go func() {
 		var wg sync.WaitGroup
-		for _, st := range filtered {
+		for _, t := range tasks {
 			wg.Add(1)
-			go func(s config.StationConfig) {
+			go func(task syncTask) {
 				defer wg.Done()
-				syncStation(sid, s)
-			}(st)
+				syncStation(sid, task)
+			}(t)
 		}
 		wg.Wait()
 		logger.SessionBroadcast(sid, logger.LogMessage{
 			Level:   "INFO",
-			Message: fmt.Sprintf("Sync global completado — %d estaciones", len(filtered)),
+			Message: fmt.Sprintf("Sync global completado — %d tarea(s)", len(tasks)),
 			Progress: &logger.SyncProgress{
 				Station: "__done__",
-				Done:    len(filtered),
-				Total:   len(filtered),
+				Done:    len(tasks),
+				Total:   len(tasks),
 				Pct:     100,
 			},
 		})
 	}()
 
-	c.JSON(http.StatusOK, gin.H{"status": "started", "stations": len(filtered)})
+	c.JSON(http.StatusOK, gin.H{"status": "started", "tasks": len(tasks)})
 }
 
-// syncStation executes a full 840-record download for one station.
-func syncStation(sid string, s config.StationConfig) {
+// syncStation downloads all 840 records for one syncTask using a 2-worker pool.
+func syncStation(sid string, task syncTask) {
 	const total = 840
-	const progressStep = 42 // ~5% per update
+	const progressStep = 42 // emit progress every ~5%
 
 	records := make([]modbus.HourRecord, total)
 	var doneCount int32
@@ -104,7 +143,7 @@ func syncStation(sid string, s config.StationConfig) {
 		wgWorkers.Add(1)
 		go func() {
 			defer wgWorkers.Done()
-			client := modbus.NewModbusClient(s.IP, s.Port, s.ID, s.Endian)
+			client := modbus.NewModbusClient(task.IP, task.Port, task.UnitID, task.Endian)
 			client.Silent = true
 			if err := client.Connect(); err != nil {
 				mu.Lock()
@@ -117,15 +156,20 @@ func syncStation(sid string, s config.StationConfig) {
 			defer client.Close()
 
 			for j := range jobs {
-				data, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, s.DBAddress, uint16(j.ptr), nil)
+				data, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.DBAddr, uint16(j.ptr), nil)
 				rec := modbus.HourRecord{Hour: j.ptr / 10, Ptr: uint16(j.ptr)}
 				if err == nil {
 					rec.Valid = true
 					rec.Hex = fmt.Sprintf("%X", data)
+
+					// Extract ROC date/time from first 4 bytes before signal payload
 					payload := data
 					if len(data) >= 4 {
+						rec.DateRaw = binary.BigEndian.Uint16(data[0:2])
+						rec.TimeRaw = binary.BigEndian.Uint16(data[2:4])
 						payload = data[4:]
 					}
+
 					rec.Modes = modbus.DecodeAllModes(payload)
 					for i := range rec.Modes {
 						rec.Modes[i].Sanitize()
@@ -142,9 +186,9 @@ func syncStation(sid string, s config.StationConfig) {
 					pct := int(n) * 100 / total
 					logger.SessionBroadcast(sid, logger.LogMessage{
 						Level:   "SYNC",
-						Message: fmt.Sprintf("%s: %d/%d (%d%%)", s.Name, n, total, pct),
+						Message: fmt.Sprintf("%s: %d/%d (%d%%)", task.Key, n, total, pct),
 						Progress: &logger.SyncProgress{
-							Station: s.Name,
+							Station: task.Key,
 							Done:    int(n),
 							Total:   total,
 							Pct:     pct,
@@ -158,7 +202,7 @@ func syncStation(sid string, s config.StationConfig) {
 
 	elapsed := time.Since(stStart).Milliseconds()
 	prog := &logger.SyncProgress{
-		Station: s.Name,
+		Station: task.Key,
 		Done:    total,
 		Total:   total,
 		Pct:     100,
@@ -172,10 +216,12 @@ func syncStation(sid string, s config.StationConfig) {
 	}
 	logger.SessionBroadcast(sid, logger.LogMessage{
 		Level:    "INFO",
-		Message:  fmt.Sprintf("Sync Completo: %s (%d ms)", s.Name, elapsed),
+		Message:  fmt.Sprintf("Sync Completo: %s (%d ms)", task.Key, elapsed),
 		Progress: prog,
 	})
 }
+
+// ─── Partial sync ────────────────────────────────────────────────────────────
 
 type PartialSyncRequest struct {
 	IP        string            `json:"ip"`
@@ -214,6 +260,8 @@ func PartialSyncHandler(c *gin.Context) {
 			rec.Hex = fmt.Sprintf("%X", data)
 			payload := data
 			if len(data) >= 4 {
+				rec.DateRaw = binary.BigEndian.Uint16(data[0:2])
+				rec.TimeRaw = binary.BigEndian.Uint16(data[2:4])
 				payload = data[4:]
 			}
 			rec.Modes = modbus.DecodeAllModes(payload)
