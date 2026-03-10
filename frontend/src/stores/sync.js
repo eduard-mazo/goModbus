@@ -73,6 +73,7 @@ export const useSyncStore = defineStore('sync', () => {
     try {
       const { data } = await api.post('/stations/partial-sync',
         {
+          task_key: taskKey,
           ip: cfg.ip, port: cfg.port,
           slave_id: cfg.id, endian: cfg.endian,
           db_address: dbAddress,

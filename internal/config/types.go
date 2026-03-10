@@ -31,4 +31,5 @@ type StationConfig struct {
 	DataRegistersCount uint16            `yaml:"data_registers_count" json:"data_registers_count"`
 	DataType           string            `yaml:"data_type"            json:"data_type"`
 	Medidores          []MedidorConfig   `yaml:"medidores"            json:"medidores,omitempty"`
+	SignalNames        []string          `yaml:"signal_names"         json:"signal_names,omitempty"`
 }

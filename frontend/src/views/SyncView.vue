@@ -1,7 +1,7 @@
 <template>
   <div class="p-4 space-y-3">
 
-    <!-- Station selection -->
+    <!-- ── Station selection ───────────────────────────────────────────────── -->
     <div class="card">
       <div class="card-head">
         <span class="card-title">Selección de Estaciones</span>
@@ -41,7 +41,7 @@
       </div>
     </div>
 
-    <!-- Per-station progress bars (during download) -->
+    <!-- ── Progress bars ───────────────────────────────────────────────────── -->
     <div v-if="sync.stationsExpected.length > 0" class="card">
       <div class="card-head"><span class="card-title">Progreso de Descarga</span></div>
       <div class="p-3 space-y-2">
@@ -50,7 +50,9 @@
             <span class="text-xs font-semibold text-g-700">{{ name }}</span>
             <div class="flex items-center gap-2">
               <span v-if="sync.stationResults[name]" class="text-xs font-semibold text-forest">✓ Completo</span>
-              <span class="text-xs font-mono text-g-500">{{ sync.progress[name]?.done || 0 }}/840</span>
+              <span class="text-xs font-mono text-g-500">
+                {{ sync.progress[name]?.done || 0 }}/{{ sync.progress[name]?.total || 840 }}
+              </span>
               <span class="text-xs font-bold font-mono" :class="sync.stationResults[name] ? 'text-forest' : 'text-lime'">
                 {{ sync.progress[name]?.pct || 0 }}%
               </span>
@@ -68,10 +70,10 @@
       </div>
     </div>
 
-    <!-- Results -->
+    <!-- ── Results ─────────────────────────────────────────────────────────── -->
     <template v-if="Object.keys(sync.stationResults).length > 0">
 
-      <!-- Station tabs -->
+      <!-- Task/station tabs -->
       <div class="flex gap-1 flex-wrap">
         <button
           v-for="name in Object.keys(sync.stationResults)" :key="name"
@@ -81,12 +83,30 @@
         >{{ name }}</button>
       </div>
 
-      <!-- Multi-signal chart -->
-      <div v-if="sync.selectedIdx && currentRecords" class="card">
+      <!-- View tabs: Gráfica | Tabla -->
+      <div v-if="sync.selectedIdx && currentRecords" class="flex border-b border-g-200">
+        <button
+          class="px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+          :class="activeTab === 'chart'
+            ? 'border-lime text-lime'
+            : 'border-transparent text-g-500 hover:text-g-700'"
+          @click="activeTab = 'chart'"
+        >Gráfica</button>
+        <button
+          class="px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+          :class="activeTab === 'table'
+            ? 'border-lime text-lime'
+            : 'border-transparent text-g-500 hover:text-g-700'"
+          @click="activeTab = 'table'"
+        >Tabla</button>
+      </div>
+
+      <!-- ── Chart tab ──────────────────────────────────────────────────────── -->
+      <div v-if="activeTab === 'chart' && sync.selectedIdx && currentRecords" class="card">
         <div class="card-head">
           <span class="card-title">
             Análisis — {{ sync.selectedIdx }}
-            <span class="text-g-400 font-normal text-xs ml-1">(840 registros · doble clic en nombre para renombrar señal)</span>
+            <span class="text-g-400 font-normal text-xs ml-1">(doble clic en nombre para renombrar señal)</span>
           </span>
           <div class="flex items-center gap-2">
             <label class="lbl mb-0 mr-1">Endian</label>
@@ -103,55 +123,89 @@
             :records="currentRecords"
             :endian="rocStore.dbEndian"
             :stationName="sync.selectedIdx"
+            :signalNames="currentSignalNames"
           />
         </div>
       </div>
 
-      <!-- Record table (signal selector kept for detail view) -->
-      <div v-if="sync.selectedIdx && currentRecords" class="card overflow-hidden">
-        <div class="card-head">
-          <span class="card-title">Tabla de Registros — {{ sync.selectedIdx }}</span>
-          <div class="flex items-center gap-2">
-            <select class="fs" style="width:auto;" v-model.number="sync.chartSig">
-              <option v-for="(n, i) in SIG_NAMES" :key="i" :value="i">{{ n }}</option>
+      <!-- ── Table tab (Supabase style) ────────────────────────────────────── -->
+      <div v-if="activeTab === 'table' && sync.selectedIdx && currentRecords"
+           class="rounded-xl overflow-hidden border"
+           style="border-color:#30363d;">
+
+        <!-- Table toolbar -->
+        <div class="flex items-center justify-between px-4 py-2 border-b"
+             style="background:#161b22; border-color:#21262d;">
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-semibold" style="color:#8b949e;">
+              {{ currentRecords.length }} registros ·
+              {{ currentRecords.filter(r => r.valid).length }} válidos ·
+              {{ currentRecords.filter(r => !r.valid).length }} fallidos
+            </span>
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="text-xs" style="color:#8b949e;">Endian</label>
+            <select
+              class="text-xs rounded px-2 py-0.5"
+              style="background:#0d1117; color:#e6edf3; border:1px solid #30363d; outline:none;"
+              v-model="rocStore.dbEndian"
+            >
+              <option value="abcd">ABCD</option>
+              <option value="dcba">DCBA</option>
+              <option value="cdab">CDAB (ROC)</option>
+              <option value="badc">BADC</option>
             </select>
             <button
-              class="btn btn-sm btn-ghost"
-              @click="sync.retryStation(sync.selectedIdx, stations, sessionId)"
+              class="text-xs px-3 py-1 rounded font-medium transition-colors"
+              style="background:#21262d; color:#e6edf3; border:1px solid #30363d;"
               :disabled="sync.loading"
+              @click="sync.retryStation(sync.selectedIdx, stations, sessionId)"
             >Reintentar fallos</button>
           </div>
         </div>
-        <div class="overflow-y-auto" style="max-height:280px;">
-          <table class="w-full text-xs font-mono">
-            <thead class="sticky top-0 bg-white border-b border-g-200">
-              <tr class="text-g-500">
-                <th class="px-3 py-1 text-left">Ptr</th>
-                <th class="px-3 py-1 text-right">{{ SIG_NAMES[sync.chartSig] }}</th>
-                <th class="px-3 py-1 text-center">Estado</th>
+
+        <!-- Scrollable table -->
+        <div class="overflow-auto" style="max-height:560px; background:#0d1117;">
+          <table style="width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:11px; white-space:nowrap; min-width:1000px;">
+            <thead style="position:sticky; top:0; z-index:10;">
+              <tr style="background:#161b22; border-bottom:1px solid #21262d;">
+                <th style="padding:6px 12px; text-align:right; color:#8b949e; font-weight:500; border-right:1px solid #21262d;">Ptr</th>
+                <th style="padding:6px 12px; text-align:left; color:#8b949e; font-weight:500; border-right:1px solid #21262d;">Fecha / Hora</th>
+                <th
+                  v-for="(name, i) in sigLabels" :key="i"
+                  style="padding:6px 12px; text-align:right; color:#8b949e; font-weight:500; border-right:1px solid #21262d; max-width:120px; overflow:hidden; text-overflow:ellipsis;"
+                  :title="name"
+                >{{ name }}</th>
+                <th style="padding:6px 12px; text-align:center; color:#8b949e; font-weight:500;">OK</th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="rec in currentRecords" :key="rec.ptr"
-                class="border-b border-g-100"
-                :class="rec.valid ? 'hover:bg-g-50' : 'bg-red-50'"
+                v-for="(rec, idx) in currentRecords" :key="rec.ptr"
+                :style="`background:${rec.valid ? (idx % 2 === 0 ? '#0d1117' : '#0f1319') : '#160a0a'}; border-bottom:1px solid #21262d;`"
               >
-                <td class="px-3 py-0.5 text-g-600">{{ rec.ptr }}</td>
-                <td class="px-3 py-0.5 text-right text-g-700">
-                  {{ rec.valid && rec.modes?.[sync.chartSig]
-                    ? rec.modes[sync.chartSig][rocStore.dbEndian]?.toFixed(4)
+                <td style="padding:3px 12px; text-align:right; color:#484f58; border-right:1px solid #1c2128;">{{ rec.ptr }}</td>
+                <td style="padding:3px 12px; text-align:left; color:#8b949e; border-right:1px solid #1c2128;">{{ fmtRecDate(rec) }}</td>
+                <td
+                  v-for="(_, si) in sigLabels" :key="si"
+                  style="padding:3px 12px; text-align:right; border-right:1px solid #1c2128; font-variant-numeric:tabular-nums;"
+                  :style="`color:${rec.valid && rec.modes?.[si] ? '#7ad400' : '#484f58'}`"
+                >
+                  {{ rec.valid && rec.modes?.[si]
+                    ? rec.modes[si][rocStore.dbEndian]?.toFixed(4)
                     : '—' }}
                 </td>
-                <td class="px-3 py-0.5 text-center">
-                  <span v-if="rec.valid" class="text-forest">●</span>
-                  <span v-else class="text-red-500 font-bold">ERR</span>
+                <td style="padding:3px 12px; text-align:center;">
+                  <span :style="`font-size:9px; color:${rec.valid ? '#3fb950' : '#f85149'}`">
+                    {{ rec.valid ? '●' : '○' }}
+                  </span>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
+
     </template>
   </div>
 </template>
@@ -168,8 +222,10 @@ const sync      = useSyncStore()
 const rocStore  = useRocStore()
 const sessionId = useSessionId()
 const stations  = ref([])
+const activeTab = ref('chart')
 
-const SIG_NAMES = [
+// Default signal labels (used when station has no signal_names in config)
+const DEFAULT_SIG = [
   'Flow Min', 'Raw Pulses', 'Pf PSI', 'Tf DEG F',
   'Multiplier', 'Uncorr Vol MCF', 'Vol Accum MCF', 'Energy MMBTU',
 ]
@@ -178,6 +234,44 @@ const currentRecords = computed(() =>
   sync.selectedIdx ? sync.stationResults[sync.selectedIdx] : null
 )
 
+// Resolve station config for the currently selected task key ("STATION / M1" → "STATION")
+const currentStation = computed(() => {
+  if (!sync.selectedIdx) return null
+  const stationName = sync.selectedIdx.split(' / ')[0]
+  return stations.value.find(s => s.name === stationName) || null
+})
+
+// Signal names from config (falls back to DEFAULT_SIG)
+const currentSignalNames = computed(() => currentStation.value?.signal_names || [])
+
+// Labels used in the table header (config → DEFAULT_SIG)
+const sigLabels = computed(() =>
+  DEFAULT_SIG.map((d, i) => currentSignalNames.value[i] || d)
+)
+
+// ── Date decoder (matches MultiSignalChart) ──────────────────────────────────
+function parseRocDate(dateRaw, timeRaw) {
+  if (!dateRaw && !timeRaw) return null
+  const year   = ((dateRaw >> 9) & 0x7F) + 2000
+  const month  = (dateRaw >> 5) & 0x0F
+  const day    = dateRaw & 0x1F
+  const hour   = (timeRaw >> 11) & 0x1F
+  const minute = (timeRaw >> 5) & 0x3F
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 2000 || year > 2099) return null
+  return new Date(year, month - 1, day, hour, minute)
+}
+
+function fmtRecDate(rec) {
+  const d = parseRocDate(rec?.date_raw, rec?.time_raw)
+  if (!d) return '—'
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mn = String(d.getMinutes()).padStart(2, '0')
+  return `${dd}/${mm}/${d.getFullYear()} ${hh}:${mn}`
+}
+
+// ── Actions ──────────────────────────────────────────────────────────────────
 async function loadStations() {
   try {
     const { data } = await axios.get('/api/config')

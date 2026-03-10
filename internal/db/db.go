@@ -42,6 +42,17 @@ func migrate(db *sql.DB) error {
 			signals     TEXT NOT NULL
 		);
 
+		CREATE TABLE IF NOT EXISTS station_records (
+			task_key  TEXT    NOT NULL,
+			ptr       INTEGER NOT NULL,
+			date_raw  INTEGER NOT NULL DEFAULT 0,
+			time_raw  INTEGER NOT NULL DEFAULT 0,
+			hex       TEXT    NOT NULL DEFAULT '',
+			valid     INTEGER NOT NULL DEFAULT 0,
+			synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (task_key, ptr)
+		);
+
 		CREATE TABLE IF NOT EXISTS query_history (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
 			queried_at  DATETIME NOT NULL,

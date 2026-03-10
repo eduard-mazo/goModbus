@@ -13,6 +13,7 @@ import (
 
 	web "goModbus"
 	"goModbus/internal/api"
+	"goModbus/internal/api/handlers"
 	"goModbus/internal/certgen"
 	"goModbus/internal/db"
 	"goModbus/internal/logger"
@@ -53,7 +54,7 @@ func main() {
 		fmt.Println("WARN: no se pudo abrir base de datos:", err)
 	} else {
 		defer database.Close()
-		_ = database // available for future handler injection
+		handlers.DB = database
 	}
 
 	gin.SetMode(gin.ReleaseMode)

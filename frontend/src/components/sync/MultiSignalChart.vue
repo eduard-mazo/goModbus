@@ -172,6 +172,7 @@ const props = defineProps({
   records:     { type: Array,  default: () => [] },   // HourRecord[840]
   endian:      { type: String, default: 'cdab'   },   // float32 byte order
   stationName: { type: String, default: ''       },   // key for localStorage
+  signalNames: { type: Array,  default: () => [] },   // override default signal names from config
 })
 
 // ── SVG layout constants ─────────────────────────────────────────────────────
@@ -208,7 +209,8 @@ function loadConfig() {
   // Reset to defaults first, then overlay saved names/visibility
   const raw = props.stationName && localStorage.getItem(lsKey(props.stationName))
   signals.value = DEFAULTS.map((d, i) => {
-    let name = d.name, visible = true
+    // config.yaml signal_names takes precedence over DEFAULTS; localStorage overrides both
+    let name = props.signalNames?.[i] || d.name, visible = true
     if (raw) {
       try {
         const s = JSON.parse(raw)[i]
@@ -392,7 +394,8 @@ const tooltipPos = computed(() => {
 function _svgFraction(clientX) {
   const rect = svgRef.value?.getBoundingClientRect()
   if (!rect) return 0
-  return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width * W - ML) / CW)
+  // (clientX→viewBox px − left margin) / chart width → fraction 0–1
+  return Math.max(0, Math.min(1, ((clientX - rect.left) / rect.width * W - ML) / CW))
 }
 
 function _fracToRi(frac) {
@@ -469,5 +472,5 @@ onUnmounted(() => {
   window.removeEventListener('mousemove', _doDrag)
   window.removeEventListener('mouseup',   _endDrag)
 })
-watch(() => props.stationName, loadConfig)
+watch([() => props.stationName, () => props.signalNames], loadConfig)
 </script>
