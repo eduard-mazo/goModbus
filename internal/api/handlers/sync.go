@@ -18,6 +18,48 @@ import (
 	"goModbus/internal/modbus"
 )
 
+// allPtrs returns every circular-buffer index (0..syncTotal-1).
+func allPtrs() []int {
+	ptrs := make([]int, syncTotal)
+	for i := range ptrs {
+		ptrs[i] = i
+	}
+	return ptrs
+}
+
+// timeDeltaPtrs calculates which circular-buffer ptrs are missing from the DB.
+// It decodes the current pointer's record to get T_current, then compares with
+// T_last (the most recent record in station_history) to find the hour delta.
+func timeDeltaPtrs(lastFecha, lastHora string, currentPtr int, currentData []byte, endian modbus.Endianness) []int {
+	// Decode the timestamp of the most recently written device record
+	modes := modbus.DecodeAllModes(currentData)
+	_, _, currentTS, ok := modbus.DecodeROCDateTime(modes, endian)
+	if !ok || currentTS <= 0 {
+		return allPtrs() // can't decode → full sync
+	}
+
+	// Parse the last DB record's timestamp
+	lastT, err := time.ParseInLocation("2006-01-02 15:04", lastFecha+" "+lastHora, time.Local)
+	if err != nil {
+		return allPtrs()
+	}
+
+	deltaHours := int((currentTS - lastT.Unix()) / 3600)
+	if deltaHours <= 0 {
+		return nil // already up to date
+	}
+	if deltaHours >= syncTotal {
+		return allPtrs() // more than one full rotation — full sync
+	}
+
+	// Generate the deltaHours ptrs ending at currentPtr (circular wrap)
+	ptrs := make([]int, deltaHours)
+	for i := 0; i < deltaHours; i++ {
+		ptrs[i] = (currentPtr - deltaHours + 1 + i + syncTotal*10) % syncTotal
+	}
+	return ptrs
+}
+
 // DB is injected from main.go after the database is opened.
 var DB *sql.DB
 
@@ -133,7 +175,7 @@ const syncTotal = 840
 func syncStation(sid string, task syncTask) {
 	start := time.Now()
 
-	// 1. Load cached records from DB (for delta tracking)
+	// 1. Load cached station_records (for failed-ptr detection only)
 	cached := map[int]idb.StationRecord{}
 	if DB != nil {
 		if m, err := idb.GetTaskRecords(DB, task.Key); err == nil {
@@ -141,13 +183,23 @@ func syncStation(sid string, task syncTask) {
 		}
 	}
 
-	announceProgress(sid, task, 0, len(deltaPtrs(cached, -1)), "conectando…")
+	// 2. Get the latest timestamp already stored in station_history
+	lastFecha, lastHora := "", ""
+	hasHistory := false
+	if DB != nil {
+		if f, h, err := idb.GetLastHistoryTime(DB, task.Key); err == nil && f != "" {
+			lastFecha, lastHora = f, h
+			hasHistory = true
+		}
+	}
 
-	// 2. Connect to device
+	announceProgress(sid, task, 0, syncTotal, "conectando…")
+
+	// 3. Connect to device
 	client := modbus.NewModbusClient(task.IP, task.Port, task.UnitID, task.Endian)
 	client.Silent = true
 	if err := client.Connect(); err != nil {
-		if len(cached) > 0 {
+		if hasHistory {
 			records := historyRecords(task)
 			sendFinal(sid, task, records, "", start, "caché (sin conexión)")
 		} else {
@@ -157,7 +209,7 @@ func syncStation(sid string, task syncTask) {
 	}
 	defer client.Close()
 
-	// 3. Read current pointer
+	// 4. Read current pointer (the most recently written circular-buffer slot)
 	currentPtr := -1
 	if ptrData, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, 1, nil); err == nil && len(ptrData) >= 2 {
 		v := int(binary.BigEndian.Uint16(ptrData[0:2]))
@@ -165,28 +217,71 @@ func syncStation(sid string, task syncTask) {
 			currentPtr = v
 		}
 	}
-
-	// 4. Determine which pointers to fetch
-	ptrs := deltaPtrs(cached, currentPtr)
-	if len(ptrs) == 0 {
-		records := historyRecords(task)
-		sendFinal(sid, task, records, "", start, "caché al día")
+	if currentPtr < 0 {
+		if hasHistory {
+			records := historyRecords(task)
+			sendFinal(sid, task, records, "", start, "caché (no se pudo leer puntero)")
+		} else {
+			sendFinal(sid, task, nil, "No se pudo leer el puntero del equipo", start, "")
+		}
 		return
 	}
 
-	// 5. Fetch sequentially (1 worker — safe, no shared-connection race)
+	// 5. Read the record at currentPtr to get T_current (needed for delta calc)
+	var currentPtrData []byte
+	if d, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.DBAddr, uint16(currentPtr), nil); err == nil {
+		currentPtrData = d
+	}
+
+	// 6. Compute which ptrs to fetch (time-based delta vs full sync)
+	var ptrs []int
+	if hasHistory && len(currentPtrData) > 0 {
+		ptrs = timeDeltaPtrs(lastFecha, lastHora, currentPtr, currentPtrData, task.Endian)
+	} else {
+		ptrs = allPtrs() // no history or can't decode → full sync
+	}
+
+	// 7. Also add failed ptrs from station_records (retry)
+	ptrSet := make(map[int]bool, len(ptrs))
+	for _, p := range ptrs {
+		ptrSet[p] = true
+	}
+	for ptr, r := range cached {
+		if !r.Valid && !ptrSet[ptr] {
+			ptrs = append(ptrs, ptr)
+			ptrSet[ptr] = true
+		}
+	}
+	sort.Ints(ptrs)
+
+	if len(ptrs) == 0 {
+		records := historyRecords(task)
+		sendFinal(sid, task, records, "", start, "al día")
+		return
+	}
+
+	// 8. Fetch sequentially
 	fresh := make(map[int]idb.StationRecord, len(ptrs))
 	var done int32
 	total := len(ptrs)
 
 	for _, p := range ptrs {
-		data, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.DBAddr, uint16(p), nil)
+		var data []byte
+		// Reuse the already-read record for currentPtr
+		if p == currentPtr && len(currentPtrData) > 0 {
+			data = currentPtrData
+		} else {
+			d, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.DBAddr, uint16(p), nil)
+			if err == nil {
+				data = d
+			}
+		}
+
 		rec := idb.StationRecord{Ptr: p}
-		if err == nil {
+		if len(data) > 0 {
 			rec.Valid = true
 			rec.Hex = fmt.Sprintf("%X", data)
 			rec.RawHex = buildRawHex(task.UnitID, modbus.FCReadHoldingRegisters, data)
-			// Decode date/time from first two float32 (ROC MMDDYY / HHMM format)
 			modes := modbus.DecodeAllModes(data)
 			if fecha, hora, _, ok := modbus.DecodeROCDateTime(modes, task.Endian); ok {
 				rec.Fecha = fecha
@@ -201,7 +296,7 @@ func syncStation(sid string, task syncTask) {
 		}
 	}
 
-	// 6. Persist to DB
+	// 9. Persist to DB
 	if DB != nil {
 		batch := make([]idb.StationRecord, 0, len(fresh))
 		for _, r := range fresh {
@@ -209,32 +304,16 @@ func syncStation(sid string, task syncTask) {
 		}
 		_ = idb.UpsertRecords(DB, task.Key, batch)
 		_ = idb.UpsertHistory(DB, task.Key, batch)
-
-		if currentPtr >= 0 {
-			_ = idb.UpsertTaskMeta(DB, idb.TaskMeta{
-				TaskKey: task.Key,
-				RefPtr:  currentPtr,
-				RefTime: time.Now().Unix(),
-			})
-		}
+		_ = idb.UpsertTaskMeta(DB, idb.TaskMeta{
+			TaskKey: task.Key,
+			RefPtr:  currentPtr,
+			RefTime: time.Now().Unix(),
+		})
 	}
 
-	// 7. Re-decode cached records with fresh fecha/hora if missing
-	for ptr, r := range cached {
-		if _, inFresh := fresh[ptr]; !inFresh && r.Hex != "" && r.Fecha == "" {
-			raw := hexDecodeStr(r.Hex)
-			modes := modbus.DecodeAllModes(raw)
-			if fecha, hora, _, ok := modbus.DecodeROCDateTime(modes, task.Endian); ok {
-				r.Fecha = fecha
-				r.Hora = hora
-				cached[ptr] = r
-			}
-		}
-	}
-
-	// 8. Broadcast all history records (chronological, unlimited)
-	records := buildHistory(cached, fresh, task.Endian)
-	note := fmt.Sprintf("%d nuevos, %d en caché", len(fresh), len(cached))
+	// 10. Load full history (unlimited) and broadcast
+	records := historyRecords(task)
+	note := fmt.Sprintf("%d nuevos, ptr=%d", len(fresh), currentPtr)
 	sendFinal(sid, task, records, "", start, note)
 }
 
@@ -268,106 +347,9 @@ func historyRecords(task syncTask) []modbus.HourRecord {
 	return out
 }
 
-// buildHistory merges cached + fresh maps into a chronologically-sorted slice.
-// fresh overrides cached for the same ptr. Only valid records with fecha/hora included.
-func buildHistory(cached, fresh map[int]idb.StationRecord, endian modbus.Endianness) []modbus.HourRecord {
-	// Merge: fresh wins over cached
-	merged := make(map[int]idb.StationRecord, len(cached)+len(fresh))
-	for ptr, r := range cached {
-		merged[ptr] = r
-	}
-	for ptr, r := range fresh {
-		merged[ptr] = r
-	}
-
-	// Collect valid records with fecha/hora
-	var out []modbus.HourRecord
-	for _, r := range merged {
-		if !r.Valid || r.Fecha == "" || r.Hora == "" {
-			continue
-		}
-		raw := hexDecodeStr(r.Hex)
-		modes := modbus.DecodeAllModes(raw)
-		for i := range modes {
-			modes[i].Sanitize()
-		}
-		_, _, ts, _ := modbus.DecodeROCDateTime(modes, endian)
-		out = append(out, modbus.HourRecord{
-			Ptr:   uint16(r.Ptr),
-			Hex:   r.Hex,
-			Modes: modes,
-			Valid: true,
-			Fecha: r.Fecha,
-			Hora:  r.Hora,
-			TS:    ts,
-		})
-	}
-
-	// Sort chronologically
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Fecha != out[j].Fecha {
-			return out[i].Fecha < out[j].Fecha
-		}
-		return out[i].Hora < out[j].Hora
-	})
-	return out
-}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-func deltaPtrs(cached map[int]idb.StationRecord, currentPtr int) []int {
-	if len(cached) == 0 || currentPtr < 0 {
-		all := make([]int, syncTotal)
-		for i := range all {
-			all[i] = i
-		}
-		return all
-	}
-
-	maxValid := -1
-	var failed []int
-	for ptr, r := range cached {
-		if r.Valid && ptr > maxValid {
-			maxValid = ptr
-		}
-		if !r.Valid {
-			failed = append(failed, ptr)
-		}
-	}
-
-	if maxValid < 0 {
-		all := make([]int, syncTotal)
-		for i := range all {
-			all[i] = i
-		}
-		return all
-	}
-
-	var newPtrs []int
-	if currentPtr >= maxValid {
-		for p := maxValid + 1; p <= currentPtr; p++ {
-			newPtrs = append(newPtrs, p)
-		}
-	} else {
-		for p := maxValid + 1; p < syncTotal; p++ {
-			newPtrs = append(newPtrs, p)
-		}
-		for p := 0; p <= currentPtr; p++ {
-			newPtrs = append(newPtrs, p)
-		}
-	}
-
-	seen := map[int]bool{}
-	var result []int
-	for _, p := range append(newPtrs, failed...) {
-		if !seen[p] {
-			seen[p] = true
-			result = append(result, p)
-		}
-	}
-	sort.Ints(result)
-	return result
-}
 
 func buildRawHex(unitID, fc byte, data []byte) string {
 	frame := make([]byte, 9+len(data))

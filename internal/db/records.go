@@ -156,6 +156,17 @@ func UpsertHistory(database *sql.DB, taskKey string, records []StationRecord) er
 	return tx.Commit()
 }
 
+// GetLastHistoryTime returns the most recent (fecha, hora) from station_history
+// for taskKey, ordered lexicographically (YYYY-MM-DD HH:MM sorts correctly).
+func GetLastHistoryTime(database *sql.DB, taskKey string) (fecha, hora string, err error) {
+	row := database.QueryRow(
+		`SELECT fecha, hora FROM station_history WHERE task_key = ?
+		 ORDER BY fecha DESC, hora DESC LIMIT 1`, taskKey,
+	)
+	err = row.Scan(&fecha, &hora)
+	return
+}
+
 // ─── task_meta ────────────────────────────────────────────────────────────────
 
 func GetTaskMeta(database *sql.DB, taskKey string) (*TaskMeta, error) {

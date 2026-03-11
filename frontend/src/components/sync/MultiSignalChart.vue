@@ -46,6 +46,18 @@
       <span class="text-g-400 text-sm">Sin datos para mostrar</span>
     </div>
 
+    <!-- ── Hex inspector ──────────────────────────────────────────────────── -->
+    <div v-if="hoveredRecord"
+         class="font-mono text-xs rounded border border-g-200 bg-g-50 p-2 leading-relaxed"
+         style="word-break:break-all;">
+      <span class="text-g-400">ptr </span><span class="text-forest font-bold">{{ hoveredRecord.ptr }}</span>
+      <span class="text-g-300 mx-2">·</span>
+      <span class="text-g-400">{{ hoveredRecord.fecha }} {{ hoveredRecord.hora }}</span>
+      <span class="text-g-300 mx-2">·</span>
+      <span class="text-g-500">hex </span><span class="text-g-700">{{ formattedHex }}</span>
+    </div>
+    <div v-else-if="hasData" class="text-xs text-g-300 italic pl-1">Pase el cursor sobre la gráfica para ver el hex del registro</div>
+
   </div>
 </template>
 
@@ -87,9 +99,16 @@ const DEFAULTS = [
 // SIGNAL_OFFSET: skip modes[0] (date float) and modes[1] (time float)
 const SIGNAL_OFFSET = 2
 
-const signals  = ref(DEFAULTS.map(d => ({ ...d, visible: true, editing: false, _bk: '' })))
-const chartRef = ref(null)
-const _nameEl  = {}
+const signals      = ref(DEFAULTS.map(d => ({ ...d, visible: true, editing: false, _bk: '' })))
+const chartRef     = ref(null)
+const _nameEl      = {}
+const hoveredRecord = ref(null)
+
+const formattedHex = computed(() => {
+  const h = hoveredRecord.value?.hex || ''
+  // Group into 8-char (4-byte) blocks for readability
+  return h.match(/.{1,8}/g)?.join(' ') || h
+})
 
 // ── Timestamp axis (from rec.ts — unix seconds embedded in each record) ───────
 const validRecords = computed(() => props.records.filter(r => r?.valid && r.ts))
@@ -235,6 +254,13 @@ const chartOptions = computed(() => ({
   animation:           false,
   interaction: { mode: 'index', intersect: false },
 
+  onHover: (_event, elements, chart) => {
+    if (!elements?.length) { hoveredRecord.value = null; return }
+    const xMs = chart.data.datasets[elements[0].datasetIndex]?.data[elements[0].index]?.x
+    if (!xMs) { hoveredRecord.value = null; return }
+    hoveredRecord.value = props.records.find(r => r.ts && Math.abs(r.ts * 1000 - xMs) < 1800000) || null
+  },
+
   plugins: {
     legend: { display: false },
 
@@ -317,6 +343,7 @@ onMounted(() => {
 watch([() => props.stationName, () => props.signalNames], loadConfig)
 
 watch(() => props.records, () => {
+  hoveredRecord.value = null
   nextTick(() => {
     const chart = chartRef.value?.chart
     if (!chart) return
