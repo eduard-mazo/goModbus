@@ -14,6 +14,7 @@ func RegisterRoutes(r *gin.Engine) {
 		api.GET("/config", handlers.GetConfigHandler)
 		api.POST("/stations/full-sync", handlers.FullSyncHandler)
 		api.POST("/stations/partial-sync", handlers.PartialSyncHandler)
+		api.POST("/stations/load-db", handlers.LoadFromDBHandler)
 		api.POST("/query", handlers.QueryHandler)
 		api.POST("/roc", handlers.RocHandler)
 		api.POST("/roc/history24", handlers.RocHistory24Handler)

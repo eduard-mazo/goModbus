@@ -53,6 +53,12 @@ func migrate(db *sql.DB) error {
 			PRIMARY KEY (task_key, ptr)
 		);
 
+		CREATE TABLE IF NOT EXISTS task_meta (
+			task_key  TEXT    PRIMARY KEY,
+			ref_ptr   INTEGER NOT NULL DEFAULT -1,
+			ref_time  INTEGER NOT NULL DEFAULT 0
+		);
+
 		CREATE TABLE IF NOT EXISTS query_history (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
 			queried_at  DATETIME NOT NULL,
@@ -65,5 +71,10 @@ func migrate(db *sql.DB) error {
 			result_hex  TEXT
 		);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	// Additive column migrations (ignore error if column already exists)
+	db.Exec(`ALTER TABLE station_records ADD COLUMN raw_hex TEXT NOT NULL DEFAULT ''`)
+	return nil
 }

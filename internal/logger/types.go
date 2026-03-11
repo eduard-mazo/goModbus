@@ -10,6 +10,8 @@ type SyncProgress struct {
 	Pct     int                 `json:"pct"`
 	Records []modbus.HourRecord `json:"records,omitempty"` // populated only on final message
 	Error   string              `json:"error,omitempty"`
+	RefPtr  int                 `json:"ref_ptr,omitempty"`  // device circular-buffer pointer at sync time
+	RefTime int64               `json:"ref_time,omitempty"` // unix timestamp (seconds) associated with RefPtr
 }
 
 // LogMessage is the structure broadcast to WebSocket clients and written to file

@@ -9,6 +9,7 @@ export const useSyncStore = defineStore('sync', () => {
   const viewTab = ref('chart')   // 'chart' | 'table' — shared so sidebar can switch
   const progress = ref({})        // { taskKey: SyncProgress }
   const stationResults = ref({})  // { taskKey: HourRecord[840] }
+  const taskMeta = ref({})        // { taskKey: { refPtr, refTime } }
   const stationsExpected = ref([])
   const chartSig = ref(2)         // signal index 0-7
 
@@ -26,6 +27,13 @@ export const useSyncStore = defineStore('sync', () => {
     progress.value = { ...progress.value, [prog.station]: prog }
     if (prog.pct === 100 && prog.records && prog.records.length > 0) {
       stationResults.value = { ...stationResults.value, [prog.station]: prog.records }
+      // Store timing reference for timestamp computation
+      if (prog.ref_ptr != null && prog.ref_ptr >= 0) {
+        taskMeta.value = {
+          ...taskMeta.value,
+          [prog.station]: { refPtr: prog.ref_ptr, refTime: prog.ref_time || 0 },
+        }
+      }
       if (!selectedIdx.value) selectedIdx.value = prog.station
     }
   }
@@ -45,6 +53,37 @@ export const useSyncStore = defineStore('sync', () => {
     } catch (e) {
       console.error(e)
       loading.value = false
+    }
+  }
+
+  // Load cached records from the DB without connecting to any device.
+  // Returns true if any data was found.
+  async function loadFromDB(stationNames) {
+    try {
+      const { data } = await api.post('/stations/load-db', {
+        stations: stationNames && stationNames.length ? stationNames : [],
+      })
+      let found = false
+      for (const [key, result] of Object.entries(data)) {
+        if (result.records && result.records.length > 0) {
+          stationResults.value = { ...stationResults.value, [key]: result.records }
+          if (result.ref_ptr != null && result.ref_ptr >= 0) {
+            taskMeta.value = {
+              ...taskMeta.value,
+              [key]: { refPtr: result.ref_ptr, refTime: result.ref_time || 0 },
+            }
+          }
+          if (!stationsExpected.value.includes(key)) {
+            stationsExpected.value = [...stationsExpected.value, key]
+          }
+          if (!selectedIdx.value) selectedIdx.value = key
+          found = true
+        }
+      }
+      return found
+    } catch (e) {
+      console.error(e)
+      return false
     }
   }
 
@@ -99,7 +138,7 @@ export const useSyncStore = defineStore('sync', () => {
 
   return {
     loading, selectedNames, selectedIdx, viewTab,
-    progress, stationResults, stationsExpected, chartSig,
-    handleProgress, startFullSync, retryStation,
+    progress, stationResults, taskMeta, stationsExpected, chartSig,
+    handleProgress, startFullSync, loadFromDB, retryStation,
   }
 })

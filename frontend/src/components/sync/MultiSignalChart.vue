@@ -71,6 +71,8 @@ const props = defineProps({
   endian:      { type: String, default: 'cdab'   },
   stationName: { type: String, default: ''       },
   signalNames: { type: Array,  default: () => [] },
+  refPtr:      { type: Number, default: -1       }, // device pointer at sync time
+  refTime:     { type: Number, default: 0        }, // unix timestamp (seconds) for refPtr
 })
 
 // ── Signal defaults ───────────────────────────────────────────────────────────
@@ -88,6 +90,49 @@ const DEFAULTS = [
 const signals  = ref(DEFAULTS.map(d => ({ ...d, visible: true, editing: false, _bk: '' })))
 const chartRef = ref(null)
 const _nameEl  = {}
+
+// ── Timestamp computation ─────────────────────────────────────────────────────
+// For ptr P: timestamp = refTime - ((refPtr - P + 840) % 840) hours
+const hasTimestamp = computed(() => props.refPtr >= 0 && props.refTime > 0)
+
+function ptrToTimestampMs(ptr) {
+  if (!hasTimestamp.value) return ptr // fallback: use ptr index as X
+  const hoursAgo = (props.refPtr - ptr + 840) % 840
+  return (props.refTime - hoursAgo * 3600) * 1000 // milliseconds
+}
+
+// Axis range in milliseconds (or ptr range as fallback)
+const xMin = computed(() => {
+  if (!hasTimestamp.value) return 0
+  return (props.refTime - 839 * 3600) * 1000
+})
+const xMax = computed(() => {
+  if (!hasTimestamp.value) return 839
+  return props.refTime * 1000
+})
+const xRange = computed(() => xMax.value - xMin.value)
+const xMinRange = computed(() => hasTimestamp.value ? 3600 * 1000 : 2) // 1 hour min zoom
+
+// ── Tick and tooltip formatting ───────────────────────────────────────────────
+function fmtTick(val) {
+  if (!hasTimestamp.value) return `Ptr ${Math.round(val)}`
+  const d = new Date(val)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${hh}h ${dd}/${mm}`
+}
+
+function fmtTooltipTitle(val) {
+  if (!hasTimestamp.value) return `Ptr ${Math.round(val)}`
+  const d = new Date(val)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mn = String(d.getMinutes()).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mmm = String(d.getMonth() + 1).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  return `${dd}/${mmm}/${yyyy} ${hh}:${mn}`
+}
 
 // ── LocalStorage persistence ──────────────────────────────────────────────────
 const lsKey = name => `roc_sig_${name}`
@@ -134,48 +179,12 @@ function finishEdit(i) {
   if (!s.name.trim()) s.name = s._bk
   s.editing = false
   saveConfig()
-  // Update chart dataset label
   const chart = chartRef.value?.chart
   if (chart) { chart.data.datasets[i].label = s.name; chart.update('none') }
 }
 function cancelEdit(i) {
   signals.value[i].name    = signals.value[i]._bk
   signals.value[i].editing = false
-}
-
-// ── ROC date decoding ─────────────────────────────────────────────────────────
-function parseRocDate(dateRaw, timeRaw) {
-  if (!dateRaw && !timeRaw) return null
-  const year   = ((dateRaw >> 9) & 0x7F) + 2000
-  const month  = (dateRaw >> 5) & 0x0F
-  const day    = dateRaw & 0x1F
-  const hour   = (timeRaw >> 11) & 0x1F
-  const minute = (timeRaw >> 5) & 0x3F
-  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 2000 || year > 2099) return null
-  return new Date(year, month - 1, day, hour, minute)
-}
-
-function fmtTick(ri) {
-  const r = props.records[ri]
-  if (!r?.valid || !r.date_raw) return `Ptr ${ri}`
-  const d = parseRocDate(r.date_raw, r.time_raw)
-  if (!d) return `Ptr ${ri}`
-  const hh = String(d.getHours()).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  return `${hh}h ${dd}/${mm}`
-}
-
-function fmtTooltipTitle(ri) {
-  const r = props.records[ri]
-  if (!r?.valid || !r.date_raw) return `Ptr ${ri}`
-  const d = parseRocDate(r.date_raw, r.time_raw)
-  if (!d) return `Ptr ${ri}`
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mn = String(d.getMinutes()).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mmm = String(d.getMonth() + 1).padStart(2, '0')
-  return `Ptr ${ri}  ·  ${dd}/${mmm} ${hh}:${mn}`
 }
 
 // ── Data computation ──────────────────────────────────────────────────────────
@@ -215,7 +224,11 @@ const chartData = computed(() => ({
   datasets: DEFAULTS.map((d, si) => ({
     label:           signals.value[si].name,
     data:            normalizedVals.value[si]
-                       .map((y, x) => y !== null ? { x, y } : null)
+                       .map((y, i) => {
+                         if (y === null) return null
+                         const ptr = props.records[i]?.ptr ?? i
+                         return { x: ptrToTimestampMs(ptr), y }
+                       })
                        .filter(Boolean),
     borderColor:     d.color,
     backgroundColor: d.color + '18',
@@ -247,11 +260,20 @@ const chartOptions = computed(() => ({
       bodyFont:  { family: "'JetBrains Mono', monospace", size: 11 },
       padding:   10,
       callbacks: {
-        title: (items) => fmtTooltipTitle(Math.round(items[0]?.parsed?.x ?? 0)),
+        title: (items) => fmtTooltipTitle(items[0]?.parsed?.x ?? 0),
         label: (ctx) => {
           const si = ctx.datasetIndex
-          const ri = Math.round(ctx.parsed.x)
-          const v  = realVals.value[si]?.[ri]
+          // Find the record nearest to the hovered X (timestamp or ptr index)
+          const xVal = ctx.parsed.x
+          let ri = 0
+          if (hasTimestamp.value) {
+            // Convert timestamp back to ptr index
+            const hoursAgo = Math.round((props.refTime * 1000 - xVal) / 3600000)
+            ri = (props.refPtr - hoursAgo + 840) % 840
+          } else {
+            ri = Math.round(xVal)
+          }
+          const v = realVals.value[si]?.[ri]
           if (!signals.value[si]?.visible) return null
           return `  ${signals.value[si].name}: ${v !== null && v !== undefined ? v.toFixed(4) : '—'}`
         },
@@ -264,22 +286,22 @@ const chartOptions = computed(() => ({
     },
 
     zoom: {
-      zoom: { wheel: { enabled: true }, pinch: { enabled: false }, mode: 'x' },
-      pan:  { enabled: true, mode: 'x' },
-      limits: { x: { min: 0, max: 839, minRange: 2 } },
+      zoom:   { wheel: { enabled: true }, pinch: { enabled: false }, mode: 'x' },
+      pan:    { enabled: true, mode: 'x' },
+      limits: { x: { min: xMin.value, max: xMax.value, minRange: xMinRange.value } },
     },
   },
 
   scales: {
     x: {
       type: 'linear',
-      min:  0,
-      max:  839,
+      min:  xMin.value,
+      max:  xMax.value,
       ticks: {
         color:         '#9ab59a',
         font:          { size: 9, family: "'JetBrains Mono', monospace" },
         maxTicksLimit: 8,
-        callback:      (val) => fmtTick(Math.round(val)),
+        callback:      (val) => fmtTick(val),
       },
       grid: { color: '#d1fae5', lineWidth: 0.5 },
     },
@@ -293,10 +315,12 @@ const chartOptions = computed(() => ({
 }))
 
 // ── Zoom controls ─────────────────────────────────────────────────────────────
-function setWindow(size) {
+function setWindow(hours) {
   const chart = chartRef.value?.chart
   if (!chart) return
-  chart.zoomScale('x', { min: Math.max(0, 840 - size), max: 839 }, 'none')
+  const max = xMax.value
+  const min = max - hours * (hasTimestamp.value ? 3600 * 1000 : 1)
+  chart.zoomScale('x', { min: Math.max(xMin.value, min), max }, 'none')
 }
 
 function resetZoom() {
@@ -311,8 +335,8 @@ onMounted(() => {
 
 watch([() => props.stationName, () => props.signalNames], loadConfig)
 
-// Sync visibility after chart fully redraws when data changes
-watch(() => props.records, () => {
+// Sync visibility and reset zoom after data or ref changes
+watch([() => props.records, () => props.refPtr, () => props.refTime], () => {
   nextTick(() => {
     const chart = chartRef.value?.chart
     if (!chart) return

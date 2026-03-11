@@ -44,7 +44,7 @@
       </div>
 
       <!-- Controls row -->
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
         <button
           class="btn btn-forest btn-sm"
           :disabled="sync.loading || sync.selectedNames.length === 0"
@@ -54,10 +54,22 @@
           <svg v-else class="animate-spin" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/></svg>
           {{ sync.loading ? 'Sincronizando…' : `Sincronizar (${sync.selectedNames.length})` }}
         </button>
+        <button
+          class="btn btn-ghost btn-sm"
+          :disabled="sync.loading"
+          title="Cargar datos almacenados sin conectar al equipo"
+          @click="loadFromDB"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Ver BD
+        </button>
         <button class="btn btn-ghost btn-sm" @click="sync.selectedNames = stations.map(s => s.name)">Todas</button>
         <button class="btn btn-ghost btn-sm" @click="sync.selectedNames = []">Ninguna</button>
         <span v-if="sync.loading" class="text-xs text-g-400 ml-1">
           {{ completedCount }}/{{ sync.stationsExpected.length }} tareas completadas
+        </span>
+        <span v-if="dbLoadMsg" class="text-xs ml-1" :class="dbLoadMsg.ok ? 'text-forest' : 'text-g-400'">
+          {{ dbLoadMsg.text }}
         </span>
       </div>
     </div>
@@ -114,6 +126,10 @@
               <option value="cdab">CDAB (ROC)</option>
               <option value="badc">BADC</option>
             </select>
+            <!-- Ref time badge -->
+            <span v-if="currentMeta?.refTime" class="text-g-400 font-mono" style="font-size:9px;">
+              ref {{ fmtRefTime(currentMeta.refTime) }}
+            </span>
             <button
               class="btn btn-sm btn-ghost"
               :disabled="sync.loading"
@@ -144,6 +160,8 @@
                 :endian="rocStore.dbEndian"
                 :stationName="sync.selectedIdx"
                 :signalNames="currentSignalNames"
+                :refPtr="currentMeta?.refPtr ?? -1"
+                :refTime="currentMeta?.refTime ?? 0"
               />
             </div>
           </div>
@@ -209,7 +227,7 @@
       <div v-else-if="!sync.loading" class="flex-1 flex items-center justify-center">
         <div class="text-center space-y-2">
           <svg class="mx-auto text-g-300" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
-          <p class="text-g-400 text-sm">Selecciona estaciones y sincroniza para ver datos</p>
+          <p class="text-g-400 text-sm">Selecciona estaciones y sincroniza, o usa <strong>Ver BD</strong> para cargar datos almacenados</p>
         </div>
       </div>
 
@@ -229,6 +247,7 @@ const sync      = useSyncStore()
 const rocStore  = useRocStore()
 const sessionId = useSessionId()
 const stations  = ref([])
+const dbLoadMsg = ref(null)
 
 const DEFAULT_SIG = [
   'Flow Min', 'Raw Pulses', 'Pf PSI', 'Tf DEG F',
@@ -248,6 +267,8 @@ const currentStation = computed(() => {
 
 const currentSignalNames = computed(() => currentStation.value?.signal_names || [])
 
+const currentMeta = computed(() => sync.taskMeta[sync.selectedIdx] || null)
+
 const sigLabels = computed(() =>
   DEFAULT_SIG.map((d, i) => currentSignalNames.value[i] || d)
 )
@@ -261,7 +282,6 @@ const completedCount = computed(() =>
 )
 
 // ── Per-station progress aggregation ─────────────────────────────────────────
-// Tasks for a station may be "STATION" or "STATION / M1", "STATION / M2" etc.
 function stationPct(stName) {
   let done = 0, total = 0
   for (const [key, prog] of Object.entries(sync.progress)) {
@@ -284,26 +304,33 @@ function stationError(stName) {
   return null
 }
 
-// ── Date decoder (matches MultiSignalChart) ───────────────────────────────────
-function parseRocDate(dateRaw, timeRaw) {
-  if (!dateRaw && !timeRaw) return null
-  const year   = ((dateRaw >> 9) & 0x7F) + 2000
-  const month  = (dateRaw >> 5) & 0x0F
-  const day    = dateRaw & 0x1F
-  const hour   = (timeRaw >> 11) & 0x1F
-  const minute = (timeRaw >> 5) & 0x3F
-  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 2000 || year > 2099) return null
-  return new Date(year, month - 1, day, hour, minute)
+// ── Timestamp computation (from refPtr + refTime) ─────────────────────────────
+// Each record at ptr P has timestamp = refTime - ((refPtr - P + 840) % 840) hours
+function recTimestamp(rec) {
+  const meta = currentMeta.value
+  if (!meta || meta.refPtr < 0 || !meta.refTime) return null
+  const hoursAgo = (meta.refPtr - rec.ptr + 840) % 840
+  return meta.refTime - hoursAgo * 3600 // unix seconds
 }
 
 function fmtRecDate(rec) {
-  const d = parseRocDate(rec?.date_raw, rec?.time_raw)
-  if (!d) return '—'
+  const ts = recTimestamp(rec)
+  if (!ts) return '—'
+  const d = new Date(ts * 1000)
   const dd = String(d.getDate()).padStart(2, '0')
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   const hh = String(d.getHours()).padStart(2, '0')
   const mn = String(d.getMinutes()).padStart(2, '0')
   return `${dd}/${mm}/${d.getFullYear()} ${hh}:${mn}`
+}
+
+function fmtRefTime(unixSec) {
+  if (!unixSec) return ''
+  const d = new Date(unixSec * 1000)
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  return `${dd}/${mm}/${d.getFullYear()} ${hh}h`
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
@@ -318,6 +345,15 @@ async function loadStations() {
 
 async function startSync() {
   await sync.startFullSync(sessionId)
+}
+
+async function loadFromDB() {
+  dbLoadMsg.value = null
+  const found = await sync.loadFromDB(sync.selectedNames)
+  dbLoadMsg.value = found
+    ? { ok: true, text: 'Datos cargados desde BD' }
+    : { ok: false, text: 'Sin datos en BD para la selección' }
+  setTimeout(() => { dbLoadMsg.value = null }, 3000)
 }
 
 onMounted(loadStations)
