@@ -13,7 +13,7 @@
         <span
           v-if="!sig.editing"
           class="font-medium text-g-700 whitespace-nowrap"
-          :title="'Doble clic para renombrar'"
+          title="Doble clic para renombrar"
           @dblclick.stop="startEdit(i)"
         >{{ sig.name }}</span>
         <input
@@ -29,12 +29,12 @@
         />
       </div>
 
-      <!-- Preset zoom buttons -->
+      <!-- Zoom preset buttons -->
       <div class="ml-auto flex items-center gap-1">
         <span class="text-xs text-g-400 mr-1">Vista:</span>
         <button class="btn btn-sm btn-ghost" @click="setWindow(24)">24h</button>
         <button class="btn btn-sm btn-ghost" @click="setWindow(168)">7d</button>
-        <button class="btn btn-sm btn-ghost" @click="resetZoom">840h</button>
+        <button class="btn btn-sm btn-ghost" @click="resetZoom">Todo</button>
       </div>
     </div>
 
@@ -71,11 +71,9 @@ const props = defineProps({
   endian:      { type: String, default: 'cdab'   },
   stationName: { type: String, default: ''       },
   signalNames: { type: Array,  default: () => [] },
-  refPtr:      { type: Number, default: -1       }, // device pointer at sync time
-  refTime:     { type: Number, default: 0        }, // unix timestamp (seconds) for refPtr
 })
 
-// ── Signal defaults ───────────────────────────────────────────────────────────
+// ── Signal defaults (modes[2..9] — first two floats are date/time) ────────────
 const DEFAULTS = [
   { name: 'Flow Min',       color: '#7AD400' },
   { name: 'Raw Pulses',     color: '#0ea5e9' },
@@ -86,36 +84,26 @@ const DEFAULTS = [
   { name: 'Vol Accum MCF',  color: '#f97316' },
   { name: 'Energy MMBTU',   color: '#007934' },
 ]
+// SIGNAL_OFFSET: skip modes[0] (date float) and modes[1] (time float)
+const SIGNAL_OFFSET = 2
 
 const signals  = ref(DEFAULTS.map(d => ({ ...d, visible: true, editing: false, _bk: '' })))
 const chartRef = ref(null)
 const _nameEl  = {}
 
-// ── Timestamp computation ─────────────────────────────────────────────────────
-// For ptr P: timestamp = refTime - ((refPtr - P + 840) % 840) hours
-const hasTimestamp = computed(() => props.refPtr >= 0 && props.refTime > 0)
+// ── Timestamp axis (from rec.ts — unix seconds embedded in each record) ───────
+const validRecords = computed(() => props.records.filter(r => r?.valid && r.ts))
 
-function ptrToTimestampMs(ptr) {
-  if (!hasTimestamp.value) return ptr // fallback: use ptr index as X
-  const hoursAgo = (props.refPtr - ptr + 840) % 840
-  return (props.refTime - hoursAgo * 3600) * 1000 // milliseconds
-}
-
-// Axis range in milliseconds (or ptr range as fallback)
 const xMin = computed(() => {
-  if (!hasTimestamp.value) return 0
-  return (props.refTime - 839 * 3600) * 1000
+  if (!validRecords.value.length) return 0
+  return validRecords.value[0].ts * 1000
 })
 const xMax = computed(() => {
-  if (!hasTimestamp.value) return 839
-  return props.refTime * 1000
+  if (!validRecords.value.length) return 1
+  return validRecords.value[validRecords.value.length - 1].ts * 1000
 })
-const xRange = computed(() => xMax.value - xMin.value)
-const xMinRange = computed(() => hasTimestamp.value ? 3600 * 1000 : 2) // 1 hour min zoom
 
-// ── Tick and tooltip formatting ───────────────────────────────────────────────
 function fmtTick(val) {
-  if (!hasTimestamp.value) return `Ptr ${Math.round(val)}`
   const d = new Date(val)
   const hh = String(d.getHours()).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
@@ -124,7 +112,6 @@ function fmtTick(val) {
 }
 
 function fmtTooltipTitle(val) {
-  if (!hasTimestamp.value) return `Ptr ${Math.round(val)}`
   const d = new Date(val)
   const hh = String(d.getHours()).padStart(2, '0')
   const mn = String(d.getMinutes()).padStart(2, '0')
@@ -188,20 +175,21 @@ function cancelEdit(i) {
 }
 
 // ── Data computation ──────────────────────────────────────────────────────────
-const hasData = computed(() => props.records?.some(r => r?.valid))
+const hasData = computed(() => validRecords.value.length > 0)
 
-// Real values [si][ri] → float | null
+// Real values [si][ri] → float | null  (signals start at modeIdx = SIGNAL_OFFSET + si)
 const realVals = computed(() =>
-  DEFAULTS.map((_, si) =>
-    props.records.map(r => {
-      if (!r?.valid || !r.modes?.[si]) return null
-      const v = r.modes[si][props.endian]
+  DEFAULTS.map((_, si) => {
+    const modeIdx = SIGNAL_OFFSET + si
+    return props.records.map(r => {
+      if (!r?.valid || !r.ts || !r.modes?.[modeIdx]) return null
+      const v = r.modes[modeIdx][props.endian]
       return (v != null && isFinite(v)) ? v : null
     })
-  )
+  })
 )
 
-// Per-signal global min/max for normalization
+// Per-signal min/max for normalization to 0-1
 const sigStats = computed(() =>
   realVals.value.map(vs => {
     const valid = vs.filter(v => v !== null)
@@ -211,7 +199,6 @@ const sigStats = computed(() =>
   })
 )
 
-// Normalized values [si][ri] → 0-1 | null
 const normalizedVals = computed(() =>
   realVals.value.map((vs, si) => {
     const { min, rng } = sigStats.value[si]
@@ -222,22 +209,23 @@ const normalizedVals = computed(() =>
 // ── Chart.js config ───────────────────────────────────────────────────────────
 const chartData = computed(() => ({
   datasets: DEFAULTS.map((d, si) => ({
-    label:           signals.value[si].name,
-    data:            normalizedVals.value[si]
-                       .map((y, i) => {
-                         if (y === null) return null
-                         const ptr = props.records[i]?.ptr ?? i
-                         return { x: ptrToTimestampMs(ptr), y }
-                       })
-                       .filter(Boolean),
-    borderColor:     d.color,
-    backgroundColor: d.color + '18',
-    fill:            true,
-    borderWidth:     1.5,
-    pointRadius:     0,
+    label:            signals.value[si].name,
+    data:             normalizedVals.value[si]
+                        .map((y, i) => {
+                          if (y === null) return null
+                          const ts = props.records[i]?.ts
+                          if (!ts) return null
+                          return { x: ts * 1000, y }
+                        })
+                        .filter(Boolean),
+    borderColor:      d.color,
+    backgroundColor:  d.color + '18',
+    fill:             true,
+    borderWidth:      1.5,
+    pointRadius:      0,
     pointHoverRadius: 4,
-    tension:         0.1,
-    spanGaps:        false,
+    tension:          0.1,
+    spanGaps:         false,
   })),
 }))
 
@@ -263,17 +251,10 @@ const chartOptions = computed(() => ({
         title: (items) => fmtTooltipTitle(items[0]?.parsed?.x ?? 0),
         label: (ctx) => {
           const si = ctx.datasetIndex
-          // Find the record nearest to the hovered X (timestamp or ptr index)
-          const xVal = ctx.parsed.x
-          let ri = 0
-          if (hasTimestamp.value) {
-            // Convert timestamp back to ptr index
-            const hoursAgo = Math.round((props.refTime * 1000 - xVal) / 3600000)
-            ri = (props.refPtr - hoursAgo + 840) % 840
-          } else {
-            ri = Math.round(xVal)
-          }
-          const v = realVals.value[si]?.[ri]
+          // Find record by X timestamp
+          const xMs = ctx.parsed.x
+          const ri = props.records.findIndex(r => r.ts && Math.abs(r.ts * 1000 - xMs) < 1800000)
+          const v = realVals.value[si]?.[ri >= 0 ? ri : 0]
           if (!signals.value[si]?.visible) return null
           return `  ${signals.value[si].name}: ${v !== null && v !== undefined ? v.toFixed(4) : '—'}`
         },
@@ -288,7 +269,7 @@ const chartOptions = computed(() => ({
     zoom: {
       zoom:   { wheel: { enabled: true }, pinch: { enabled: false }, mode: 'x' },
       pan:    { enabled: true, mode: 'x' },
-      limits: { x: { min: xMin.value, max: xMax.value, minRange: xMinRange.value } },
+      limits: { x: { min: xMin.value, max: xMax.value, minRange: 3600 * 1000 } },
     },
   },
 
@@ -319,7 +300,7 @@ function setWindow(hours) {
   const chart = chartRef.value?.chart
   if (!chart) return
   const max = xMax.value
-  const min = max - hours * (hasTimestamp.value ? 3600 * 1000 : 1)
+  const min = max - hours * 3600 * 1000
   chart.zoomScale('x', { min: Math.max(xMin.value, min), max }, 'none')
 }
 
@@ -335,8 +316,7 @@ onMounted(() => {
 
 watch([() => props.stationName, () => props.signalNames], loadConfig)
 
-// Sync visibility and reset zoom after data or ref changes
-watch([() => props.records, () => props.refPtr, () => props.refTime], () => {
+watch(() => props.records, () => {
   nextTick(() => {
     const chart = chartRef.value?.chart
     if (!chart) return

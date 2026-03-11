@@ -255,23 +255,15 @@ func RocHistory24Handler(c *gin.Context) {
 				ptr := uint16((startPtr + j.h) % bufSize)
 				data, _, _, err := wClient.Execute(modbus.FCReadHoldingRegisters, req.DBAddr, ptr, nil)
 
-				rec := modbus.HourRecord{Hour: j.h, Ptr: ptr}
+				rec := modbus.HourRecord{Ptr: ptr}
 				if err != nil {
 					logger.SessionBroadcast(sid, logger.LogMessage{Level: "WARN", Message: fmt.Sprintf("History24 h=%02d ptr=%d: %s", j.h, ptr, err.Error())})
 				} else {
 					rec.Valid = true
 					rec.Hex = fmt.Sprintf("%X", data)
-					payload := data
-					if len(data) >= 4 {
-						payload = data[4:]
-					}
-					rec.Modes = modbus.DecodeAllModes(payload)
+					rec.Modes = modbus.DecodeAllModes(data)
 					for i := range rec.Modes {
 						rec.Modes[i].Sanitize()
-					}
-					floats := wClient.DecodeFloat32(payload)
-					if len(floats) > 0 {
-						rec.Value = modbus.SanitizeFloat(floats[0])
 					}
 				}
 				resp.Records[j.h] = rec

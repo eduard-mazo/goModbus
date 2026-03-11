@@ -1,6 +1,10 @@
 package modbus
 
-import "math"
+import (
+	"fmt"
+	"math"
+	"time"
+)
 
 // Float32Modes holds one float32 value decoded under all four endianness conventions.
 type Float32Modes struct {
@@ -16,6 +20,20 @@ func (f *Float32Modes) Sanitize() {
 	f.DCBA = SanitizeFloat(f.DCBA)
 	f.CDAB = SanitizeFloat(f.CDAB)
 	f.BADC = SanitizeFloat(f.BADC)
+}
+
+// Pick returns the float32 value for the given endianness string.
+func (f *Float32Modes) Pick(endian Endianness) float32 {
+	switch endian {
+	case LittleEndian:
+		return f.DCBA
+	case WordSwapped:
+		return f.CDAB
+	case ByteSwapped:
+		return f.BADC
+	default:
+		return f.ABCD
+	}
 }
 
 func SanitizeFloat(v float32) float32 {
@@ -40,6 +58,47 @@ func DecodeAllModes(data []byte) []Float32Modes {
 	return out
 }
 
+// DecodeROCDateTime reads the first two Float32Modes entries as ROC date and time.
+//
+// ROC encodes date as a float whose integer value follows the MMDDYY pattern:
+//
+//	dateFloat = MM*10000 + DD*100 + YY   (e.g. 20315.0 = March 15, 2020+YY)
+//
+// Time is encoded as:
+//
+//	timeFloat = HH*100 + MM             (e.g. 1145.0 = 11:45)
+//
+// Returns (fecha "YYYY-MM-DD", hora "HH:MM", unix-seconds, ok).
+// ok is false if the decoded values are out of plausible range.
+func DecodeROCDateTime(modes []Float32Modes, endian Endianness) (fecha, hora string, ts int64, ok bool) {
+	if len(modes) < 2 {
+		return
+	}
+	dateVal := modes[0].Pick(endian)
+	timeVal := modes[1].Pick(endian)
+
+	dv := int(math.Round(float64(dateVal)))
+	tv := int(math.Round(float64(timeVal)))
+
+	month := dv / 10000
+	day := (dv % 10000) / 100
+	year := dv%100 + 2000
+	hour := tv / 100
+	minute := tv % 100
+
+	if month < 1 || month > 12 || day < 1 || day > 31 ||
+		year < 2000 || year > 2099 || hour > 23 || minute > 59 {
+		return
+	}
+
+	t := time.Date(year, time.Month(month), day, hour, minute, 0, 0, time.Local)
+	fecha = t.Format("2006-01-02")
+	hora = fmt.Sprintf("%02d:%02d", hour, minute)
+	ts = t.Unix()
+	ok = true
+	return
+}
+
 // DecodeBits unpacks bit values from coil response bytes
 func DecodeBits(data []byte, qty uint16) []bool {
 	bits := make([]bool, qty)
@@ -49,17 +108,18 @@ func DecodeBits(data []byte, qty uint16) []bool {
 	return bits
 }
 
-// HourRecord represents one ROC circular-buffer slot (840 total per station).
-// DateRaw / TimeRaw are the raw uint16 values from the first two device registers.
-// ROC date encoding: bit[15:9]=year(2000+), bit[8:5]=month, bit[4:0]=day
-// ROC time encoding: bit[15:11]=hour, bit[10:5]=minute, bit[4:0]=second/2
+// HourRecord represents one ROC circular-buffer record.
+//
+// The first two Float32Modes in Modes are date and time (ROC MMDDYY / HHMM encoding).
+// Measurement signals start at Modes[2] and run through Modes[9] (8 channels).
+//
+// Fecha, Hora, and TS are derived from Modes[0]/Modes[1] and the station endianness.
 type HourRecord struct {
-	Hour    int            `json:"hour"`
-	Ptr     uint16         `json:"ptr"`
-	Hex     string         `json:"hex"`
-	Value   float32        `json:"value"`           // first float in db_endian (bytes 4+)
-	Modes   []Float32Modes `json:"modes,omitempty"` // all 4 endianness decodings (bytes 4+)
-	Valid   bool           `json:"valid"`
-	DateRaw uint16         `json:"date_raw,omitempty"` // bytes 0-1: ROC date register
-	TimeRaw uint16         `json:"time_raw,omitempty"` // bytes 2-3: ROC time register
+	Ptr   uint16         `json:"ptr"`
+	Hex   string         `json:"hex"`
+	Modes []Float32Modes `json:"modes,omitempty"` // [0]=date float, [1]=time float, [2..9]=signals
+	Valid bool           `json:"valid"`
+	Fecha string         `json:"fecha,omitempty"` // "YYYY-MM-DD" decoded from Modes[0]
+	Hora  string         `json:"hora,omitempty"`  // "HH:MM"      decoded from Modes[1]
+	TS    int64          `json:"ts,omitempty"`    // unix timestamp (seconds)
 }

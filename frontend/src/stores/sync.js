@@ -6,12 +6,10 @@ export const useSyncStore = defineStore('sync', () => {
   const loading = ref(false)
   const selectedNames = ref([])
   const selectedIdx = ref(null)
-  const viewTab = ref('chart')   // 'chart' | 'table' — shared so sidebar can switch
+  const viewTab = ref('chart')   // 'chart' | 'table'
   const progress = ref({})        // { taskKey: SyncProgress }
-  const stationResults = ref({})  // { taskKey: HourRecord[840] }
-  const taskMeta = ref({})        // { taskKey: { refPtr, refTime } }
+  const stationResults = ref({})  // { taskKey: HourRecord[] } — chronological, variable length
   const stationsExpected = ref([])
-  const chartSig = ref(2)         // signal index 0-7
 
   function handleProgress(prog) {
     if (prog.station === '__done__') {
@@ -20,20 +18,12 @@ export const useSyncStore = defineStore('sync', () => {
       if (first) selectedIdx.value = first
       return
     }
-    // Register task key on first sight (backend expands medidores into task keys)
     if (!stationsExpected.value.includes(prog.station)) {
       stationsExpected.value = [...stationsExpected.value, prog.station]
     }
     progress.value = { ...progress.value, [prog.station]: prog }
     if (prog.pct === 100 && prog.records && prog.records.length > 0) {
       stationResults.value = { ...stationResults.value, [prog.station]: prog.records }
-      // Store timing reference for timestamp computation
-      if (prog.ref_ptr != null && prog.ref_ptr >= 0) {
-        taskMeta.value = {
-          ...taskMeta.value,
-          [prog.station]: { refPtr: prog.ref_ptr, refTime: prog.ref_time || 0 },
-        }
-      }
       if (!selectedIdx.value) selectedIdx.value = prog.station
     }
   }
@@ -42,7 +32,7 @@ export const useSyncStore = defineStore('sync', () => {
     loading.value = true
     progress.value = {}
     stationResults.value = {}
-    stationsExpected.value = []   // populated dynamically as progress events arrive
+    stationsExpected.value = []
     selectedIdx.value = null
 
     try {
@@ -56,8 +46,7 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
-  // Load cached records from the DB without connecting to any device.
-  // Returns true if any data was found.
+  // Load all history from DB without connecting to any device.
   async function loadFromDB(stationNames) {
     try {
       const { data } = await api.post('/stations/load-db', {
@@ -67,12 +56,6 @@ export const useSyncStore = defineStore('sync', () => {
       for (const [key, result] of Object.entries(data)) {
         if (result.records && result.records.length > 0) {
           stationResults.value = { ...stationResults.value, [key]: result.records }
-          if (result.ref_ptr != null && result.ref_ptr >= 0) {
-            taskMeta.value = {
-              ...taskMeta.value,
-              [key]: { refPtr: result.ref_ptr, refTime: result.ref_time || 0 },
-            }
-          }
           if (!stationsExpected.value.includes(key)) {
             stationsExpected.value = [...stationsExpected.value, key]
           }
@@ -87,7 +70,6 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
-  // taskKey may be "STATION" or "STATION / MEDIDOR"
   async function retryStation(taskKey, stations, sessionId) {
     const records = stationResults.value[taskKey]
     if (!records) return
@@ -95,7 +77,6 @@ export const useSyncStore = defineStore('sync', () => {
     const failedPtrs = records.filter(r => !r.valid).map(r => r.ptr)
     if (!failedPtrs.length) return
 
-    // Parse task key to find station config and medidor-specific db_address
     const parts = taskKey.split(' / ')
     const stationName = parts[0]
     const medidorName = parts[1] || null
@@ -122,11 +103,14 @@ export const useSyncStore = defineStore('sync', () => {
         { headers: { 'X-Session-ID': sessionId } }
       )
       if (data.records) {
+        // Partial-sync returns records with ts; merge by ptr
         const updated = [...records]
         data.records.forEach(newRec => {
           const idx = updated.findIndex(r => r.ptr === newRec.ptr)
           if (idx !== -1) updated[idx] = newRec
+          else updated.push(newRec)
         })
+        updated.sort((a, b) => (a.ts || 0) - (b.ts || 0))
         stationResults.value = { ...stationResults.value, [taskKey]: updated }
       }
     } catch (e) {
@@ -138,7 +122,7 @@ export const useSyncStore = defineStore('sync', () => {
 
   return {
     loading, selectedNames, selectedIdx, viewTab,
-    progress, stationResults, taskMeta, stationsExpected, chartSig,
+    progress, stationResults, stationsExpected,
     handleProgress, startFullSync, loadFromDB, retryStation,
   }
 })

@@ -53,6 +53,18 @@ func migrate(db *sql.DB) error {
 			PRIMARY KEY (task_key, ptr)
 		);
 
+		CREATE TABLE IF NOT EXISTS station_history (
+			task_key  TEXT    NOT NULL,
+			ptr       INTEGER NOT NULL DEFAULT 0,
+			fecha     TEXT    NOT NULL,
+			hora      TEXT    NOT NULL,
+			hex       TEXT    NOT NULL DEFAULT '',
+			raw_hex   TEXT    NOT NULL DEFAULT '',
+			valid     INTEGER NOT NULL DEFAULT 1,
+			synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (task_key, fecha, hora)
+		);
+
 		CREATE TABLE IF NOT EXISTS task_meta (
 			task_key  TEXT    PRIMARY KEY,
 			ref_ptr   INTEGER NOT NULL DEFAULT -1,
@@ -76,5 +88,7 @@ func migrate(db *sql.DB) error {
 	}
 	// Additive column migrations (ignore error if column already exists)
 	db.Exec(`ALTER TABLE station_records ADD COLUMN raw_hex TEXT NOT NULL DEFAULT ''`)
+	db.Exec(`ALTER TABLE station_records ADD COLUMN fecha TEXT NOT NULL DEFAULT ''`)
+	db.Exec(`ALTER TABLE station_records ADD COLUMN hora TEXT NOT NULL DEFAULT ''`)
 	return nil
 }

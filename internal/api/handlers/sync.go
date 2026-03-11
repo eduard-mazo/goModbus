@@ -27,11 +27,9 @@ type SyncRequest struct {
 	Stations []string `json:"stations"`
 }
 
-// syncTask is a flat, self-contained description of one sync unit.
-// A station with N medidores produces N tasks; a single-meter station produces 1.
 type syncTask struct {
 	Key     string // "STATION" or "STATION / M1"
-	Station string // parent station name
+	Station string
 	IP      string
 	Port    int
 	UnitID  byte
@@ -40,8 +38,6 @@ type syncTask struct {
 	DBAddr  uint16
 }
 
-// expandTasks converts filtered StationConfigs into syncTasks, expanding
-// multi-medidor stations into one task per medidor.
 func expandTasks(stations []config.StationConfig) []syncTask {
 	var tasks []syncTask
 	for _, s := range stations {
@@ -49,25 +45,15 @@ func expandTasks(stations []config.StationConfig) []syncTask {
 			for _, m := range s.Medidores {
 				tasks = append(tasks, syncTask{
 					Key:     fmt.Sprintf("%s / %s", s.Name, m.Name),
-					Station: s.Name,
-					IP:      s.IP,
-					Port:    s.Port,
-					UnitID:  s.ID,
-					Endian:  s.Endian,
-					PtrAddr: m.PointerAddress,
-					DBAddr:  m.DBAddress,
+					Station: s.Name, IP: s.IP, Port: s.Port, UnitID: s.ID,
+					Endian: s.Endian, PtrAddr: m.PointerAddress, DBAddr: m.DBAddress,
 				})
 			}
 		} else {
 			tasks = append(tasks, syncTask{
 				Key:     s.Name,
-				Station: s.Name,
-				IP:      s.IP,
-				Port:    s.Port,
-				UnitID:  s.ID,
-				Endian:  s.Endian,
-				PtrAddr: s.PointerAddress,
-				DBAddr:  s.DBAddress,
+				Station: s.Name, IP: s.IP, Port: s.Port, UnitID: s.ID,
+				Endian: s.Endian, PtrAddr: s.PointerAddress, DBAddr: s.DBAddress,
 			})
 		}
 	}
@@ -76,9 +62,6 @@ func expandTasks(stations []config.StationConfig) []syncTask {
 
 // ─── Full sync handler ────────────────────────────────────────────────────────
 
-// FullSyncHandler starts a background smart-delta sync and returns immediately.
-// Tasks for the same IP share a per-IP semaphore (max 2 concurrent); tasks
-// for different IPs run fully in parallel.
 func FullSyncHandler(c *gin.Context) {
 	var req SyncRequest
 	_ = c.ShouldBindJSON(&req)
@@ -106,9 +89,7 @@ func FullSyncHandler(c *gin.Context) {
 	}
 
 	go func() {
-		// Per-IP semaphore: max 2 concurrent tasks per device.
-		// ROC field units have limited simultaneous TCP connections;
-		// allowing 2 gives parallelism without overwhelming the device.
+		// Per-IP semaphore: max 2 concurrent connections per device.
 		ipSems := make(map[string]chan struct{})
 		for _, t := range tasks {
 			if _, ok := ipSems[t.IP]; !ok {
@@ -118,13 +99,13 @@ func FullSyncHandler(c *gin.Context) {
 
 		var wg sync.WaitGroup
 		for _, t := range tasks {
-			t := t // capture loop variable
+			t := t
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				sem := ipSems[t.IP]
-				sem <- struct{}{}        // acquire slot
-				defer func() { <-sem }() // release slot
+				sem <- struct{}{}
+				defer func() { <-sem }()
 				syncStation(sid, t)
 			}()
 		}
@@ -145,23 +126,14 @@ func FullSyncHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "started", "tasks": len(tasks)})
 }
 
-// ─── Core sync function ───────────────────────────────────────────────────────
+// ─── Core sync ────────────────────────────────────────────────────────────────
 
 const syncTotal = 840
 
-// syncStation performs a smart delta-sync for one task:
-//  1. Load cached records from DB.
-//  2. Connect and read the current pointer (+ device date/time if available).
-//  3. Determine which pointers need fetching (new since last sync + failed).
-//  4. Fetch only the needed pointers sequentially (1 worker, safe connection use).
-//  5. Persist to DB and return the full 840-record set.
-//
-// ROC historical records are returned as raw float data bytes with NO embedded
-// date/time header. Timestamps are computed on the frontend from RefPtr + RefTime.
 func syncStation(sid string, task syncTask) {
 	start := time.Now()
 
-	// ── 1. Load cached records ────────────────────────────────────────────────
+	// 1. Load cached records from DB (for delta tracking)
 	cached := map[int]idb.StationRecord{}
 	if DB != nil {
 		if m, err := idb.GetTaskRecords(DB, task.Key); err == nil {
@@ -171,67 +143,38 @@ func syncStation(sid string, task syncTask) {
 
 	announceProgress(sid, task, 0, len(deltaPtrs(cached, -1)), "conectando…")
 
-	// ── 2. Connect to device ──────────────────────────────────────────────────
+	// 2. Connect to device
 	client := modbus.NewModbusClient(task.IP, task.Port, task.UnitID, task.Endian)
 	client.Silent = true
 	if err := client.Connect(); err != nil {
 		if len(cached) > 0 {
-			records := mergeRecords(cached, nil)
-			meta, _ := idb.GetTaskMeta(DB, task.Key)
-			refPtr, refTime := -1, int64(0)
-			if meta != nil {
-				refPtr, refTime = meta.RefPtr, meta.RefTime
-			}
-			sendFinal(sid, task, records, "", start, "caché (sin conexión)", refPtr, refTime)
+			records := historyRecords(task)
+			sendFinal(sid, task, records, "", start, "caché (sin conexión)")
 		} else {
-			sendFinal(sid, task, nil, "Conexión fallida: "+err.Error(), start, "", -1, 0)
+			sendFinal(sid, task, nil, "Conexión fallida: "+err.Error(), start, "")
 		}
 		return
 	}
 	defer client.Close()
 
-	// ── 3. Read current pointer (and optionally device date/time) ─────────────
-	// Try reading 3 registers from PtrAddr: [ptr, date_raw, time_raw].
-	// Many ROC 809 units place the current-record timestamp in the two registers
-	// immediately following the history pointer register.
+	// 3. Read current pointer
 	currentPtr := -1
-	refPtr := -1
-	refTime := int64(0)
-
-	if ptrData, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, 3, nil); err == nil && len(ptrData) >= 6 {
+	if ptrData, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, 1, nil); err == nil && len(ptrData) >= 2 {
 		v := int(binary.BigEndian.Uint16(ptrData[0:2]))
 		if v >= 0 && v < syncTotal {
 			currentPtr = v
-			refPtr = v
-		}
-		dateRaw := binary.BigEndian.Uint16(ptrData[2:4])
-		timeRaw := binary.BigEndian.Uint16(ptrData[4:6])
-		if t := decodeROCDateTime(dateRaw, timeRaw); t != nil {
-			refTime = t.Unix()
-		}
-	} else if ptrData, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, 1, nil); err == nil && len(ptrData) >= 2 {
-		v := int(binary.BigEndian.Uint16(ptrData[0:2]))
-		if v >= 0 && v < syncTotal {
-			currentPtr = v
-			refPtr = v
 		}
 	}
 
-	// Fall back to server time (truncated to the hour) if device clock is unavailable.
-	if refTime == 0 {
-		refTime = time.Now().Truncate(time.Hour).Unix()
-	}
-
-	// ── 4. Determine which pointers to fetch ──────────────────────────────────
+	// 4. Determine which pointers to fetch
 	ptrs := deltaPtrs(cached, currentPtr)
 	if len(ptrs) == 0 {
-		records := mergeRecords(cached, nil)
-		persistMeta(task.Key, refPtr, refTime)
-		sendFinal(sid, task, records, "", start, "caché al día", refPtr, refTime)
+		records := historyRecords(task)
+		sendFinal(sid, task, records, "", start, "caché al día")
 		return
 	}
 
-	// ── 5. Fetch using a single worker (sequential, safe on one connection) ───
+	// 5. Fetch sequentially (1 worker — safe, no shared-connection race)
 	fresh := make(map[int]idb.StationRecord, len(ptrs))
 	var done int32
 	total := len(ptrs)
@@ -243,6 +186,12 @@ func syncStation(sid string, task syncTask) {
 			rec.Valid = true
 			rec.Hex = fmt.Sprintf("%X", data)
 			rec.RawHex = buildRawHex(task.UnitID, modbus.FCReadHoldingRegisters, data)
+			// Decode date/time from first two float32 (ROC MMDDYY / HHMM format)
+			modes := modbus.DecodeAllModes(data)
+			if fecha, hora, _, ok := modbus.DecodeROCDateTime(modes, task.Endian); ok {
+				rec.Fecha = fecha
+				rec.Hora = hora
+			}
 		}
 		fresh[p] = rec
 
@@ -252,67 +201,120 @@ func syncStation(sid string, task syncTask) {
 		}
 	}
 
-	// ── 6. Persist to DB ──────────────────────────────────────────────────────
+	// 6. Persist to DB
 	if DB != nil {
 		batch := make([]idb.StationRecord, 0, len(fresh))
 		for _, r := range fresh {
 			batch = append(batch, r)
 		}
 		_ = idb.UpsertRecords(DB, task.Key, batch)
-		persistMeta(task.Key, refPtr, refTime)
+		_ = idb.UpsertHistory(DB, task.Key, batch)
+
+		if currentPtr >= 0 {
+			_ = idb.UpsertTaskMeta(DB, idb.TaskMeta{
+				TaskKey: task.Key,
+				RefPtr:  currentPtr,
+				RefTime: time.Now().Unix(),
+			})
+		}
 	}
 
-	// ── 7. Build full 840-record response ─────────────────────────────────────
-	records := mergeRecords(cached, fresh)
-	sendFinal(sid, task, records, "", start,
-		fmt.Sprintf("%d nuevos, %d en caché", len(fresh), len(cached)),
-		refPtr, refTime)
+	// 7. Re-decode cached records with fresh fecha/hora if missing
+	for ptr, r := range cached {
+		if _, inFresh := fresh[ptr]; !inFresh && r.Hex != "" && r.Fecha == "" {
+			raw := hexDecodeStr(r.Hex)
+			modes := modbus.DecodeAllModes(raw)
+			if fecha, hora, _, ok := modbus.DecodeROCDateTime(modes, task.Endian); ok {
+				r.Fecha = fecha
+				r.Hora = hora
+				cached[ptr] = r
+			}
+		}
+	}
+
+	// 8. Broadcast all history records (chronological, unlimited)
+	records := buildHistory(cached, fresh, task.Endian)
+	note := fmt.Sprintf("%d nuevos, %d en caché", len(fresh), len(cached))
+	sendFinal(sid, task, records, "", start, note)
 }
 
-// decodeROCDateTime interprets dateRaw and timeRaw using the ROC packed encoding:
-//
-//	dateRaw: bit[15:9]=year(+2000), bit[8:5]=month, bit[4:0]=day
-//	timeRaw: bit[15:11]=hour, bit[10:5]=minute, bit[4:0]=second/2
-//
-// Returns nil if the decoded values are outside plausible ranges.
-func decodeROCDateTime(dateRaw, timeRaw uint16) *time.Time {
-	year := int((dateRaw>>9)&0x7F) + 2000
-	month := int((dateRaw >> 5) & 0x0F)
-	day := int(dateRaw & 0x1F)
-	hour := int((timeRaw >> 11) & 0x1F)
-	minute := int((timeRaw >> 5) & 0x3F)
-	if month < 1 || month > 12 || day < 1 || day > 31 || year < 2020 || year > 2035 || hour > 23 || minute > 59 {
+// historyRecords loads all long-term history from DB for broadcast.
+func historyRecords(task syncTask) []modbus.HourRecord {
+	if DB == nil {
 		return nil
 	}
-	t := time.Date(year, time.Month(month), day, hour, minute, 0, 0, time.Local)
-	return &t
-}
-
-// buildRawHex reconstructs an approximate full Modbus TCP response frame hex string.
-// TxID is set to 1 (approximate — exact value is not captured after the fact).
-func buildRawHex(unitID, fc byte, data []byte) string {
-	frame := make([]byte, 9+len(data))
-	binary.BigEndian.PutUint16(frame[0:], 1)                      // transaction ID (approx)
-	binary.BigEndian.PutUint16(frame[2:], 0)                      // protocol ID
-	binary.BigEndian.PutUint16(frame[4:], uint16(2+len(data)))    // length
-	frame[6] = unitID
-	frame[7] = fc
-	frame[8] = byte(len(data))
-	copy(frame[9:], data)
-	return fmt.Sprintf("%X", frame)
-}
-
-func persistMeta(taskKey string, refPtr int, refTime int64) {
-	if DB != nil && refPtr >= 0 {
-		_ = idb.UpsertTaskMeta(DB, idb.TaskMeta{TaskKey: taskKey, RefPtr: refPtr, RefTime: refTime})
+	hist, err := idb.GetHistory(DB, task.Key)
+	if err != nil || len(hist) == 0 {
+		return nil
 	}
+	out := make([]modbus.HourRecord, 0, len(hist))
+	for _, h := range hist {
+		raw := hexDecodeStr(h.Hex)
+		modes := modbus.DecodeAllModes(raw)
+		for i := range modes {
+			modes[i].Sanitize()
+		}
+		_, _, ts, _ := modbus.DecodeROCDateTime(modes, task.Endian)
+		out = append(out, modbus.HourRecord{
+			Ptr:   uint16(h.Ptr),
+			Hex:   h.Hex,
+			Modes: modes,
+			Valid: true,
+			Fecha: h.Fecha,
+			Hora:  h.Hora,
+			TS:    ts,
+		})
+	}
+	return out
+}
+
+// buildHistory merges cached + fresh maps into a chronologically-sorted slice.
+// fresh overrides cached for the same ptr. Only valid records with fecha/hora included.
+func buildHistory(cached, fresh map[int]idb.StationRecord, endian modbus.Endianness) []modbus.HourRecord {
+	// Merge: fresh wins over cached
+	merged := make(map[int]idb.StationRecord, len(cached)+len(fresh))
+	for ptr, r := range cached {
+		merged[ptr] = r
+	}
+	for ptr, r := range fresh {
+		merged[ptr] = r
+	}
+
+	// Collect valid records with fecha/hora
+	var out []modbus.HourRecord
+	for _, r := range merged {
+		if !r.Valid || r.Fecha == "" || r.Hora == "" {
+			continue
+		}
+		raw := hexDecodeStr(r.Hex)
+		modes := modbus.DecodeAllModes(raw)
+		for i := range modes {
+			modes[i].Sanitize()
+		}
+		_, _, ts, _ := modbus.DecodeROCDateTime(modes, endian)
+		out = append(out, modbus.HourRecord{
+			Ptr:   uint16(r.Ptr),
+			Hex:   r.Hex,
+			Modes: modes,
+			Valid: true,
+			Fecha: r.Fecha,
+			Hora:  r.Hora,
+			TS:    ts,
+		})
+	}
+
+	// Sort chronologically
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Fecha != out[j].Fecha {
+			return out[i].Fecha < out[j].Fecha
+		}
+		return out[i].Hora < out[j].Hora
+	})
+	return out
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// deltaPtrs returns the sorted list of pointer indices that must be fetched.
-// It includes pointers new since the last sync and previously-failed pointers.
-// If currentPtr < 0 (unreadable) or cached is empty, all 840 are returned.
 func deltaPtrs(cached map[int]idb.StationRecord, currentPtr int) []int {
 	if len(cached) == 0 || currentPtr < 0 {
 		all := make([]int, syncTotal)
@@ -347,7 +349,6 @@ func deltaPtrs(cached map[int]idb.StationRecord, currentPtr int) []int {
 			newPtrs = append(newPtrs, p)
 		}
 	} else {
-		// Circular buffer wrapped around
 		for p := maxValid + 1; p < syncTotal; p++ {
 			newPtrs = append(newPtrs, p)
 		}
@@ -368,39 +369,19 @@ func deltaPtrs(cached map[int]idb.StationRecord, currentPtr int) []int {
 	return result
 }
 
-// mergeRecords combines cached + fresh into the full 840-slot HourRecord slice.
-// fresh overrides cached for the same pointer.
-// The entire record data bytes are decoded as float32 signals (no date/time header).
-func mergeRecords(cached, fresh map[int]idb.StationRecord) []modbus.HourRecord {
-	records := make([]modbus.HourRecord, syncTotal)
-	for p := 0; p < syncTotal; p++ {
-		rec := modbus.HourRecord{Hour: p / 10, Ptr: uint16(p)}
-		var sr idb.StationRecord
-		var ok bool
-		if fresh != nil {
-			sr, ok = fresh[p]
-		}
-		if !ok {
-			sr, ok = cached[p]
-		}
-		if ok {
-			rec.Valid = sr.Valid
-			rec.Hex = sr.Hex
-			if sr.Valid && sr.Hex != "" {
-				raw := hexDecode(sr.Hex)
-				// All bytes are float32 data — no date/time header in ROC historical records.
-				rec.Modes = modbus.DecodeAllModes(raw)
-				for i := range rec.Modes {
-					rec.Modes[i].Sanitize()
-				}
-			}
-		}
-		records[p] = rec
-	}
-	return records
+func buildRawHex(unitID, fc byte, data []byte) string {
+	frame := make([]byte, 9+len(data))
+	binary.BigEndian.PutUint16(frame[0:], 1)
+	binary.BigEndian.PutUint16(frame[2:], 0)
+	binary.BigEndian.PutUint16(frame[4:], uint16(2+len(data)))
+	frame[6] = unitID
+	frame[7] = fc
+	frame[8] = byte(len(data))
+	copy(frame[9:], data)
+	return fmt.Sprintf("%X", frame)
 }
 
-func hexDecode(s string) []byte {
+func hexDecodeStr(s string) []byte {
 	b, _ := hex.DecodeString(s)
 	return b
 }
@@ -426,7 +407,7 @@ func announceProgress(sid string, task syncTask, done, total int, note string) {
 	})
 }
 
-func sendFinal(sid string, task syncTask, records []modbus.HourRecord, errStr string, start time.Time, note string, refPtr int, refTime int64) {
+func sendFinal(sid string, task syncTask, records []modbus.HourRecord, errStr string, start time.Time, note string) {
 	elapsed := time.Since(start).Milliseconds()
 	prog := &logger.SyncProgress{
 		Station: task.Key,
@@ -434,8 +415,6 @@ func sendFinal(sid string, task syncTask, records []modbus.HourRecord, errStr st
 		Total:   syncTotal,
 		Pct:     100,
 		Records: records,
-		RefPtr:  refPtr,
-		RefTime: refTime,
 	}
 	if errStr != "" {
 		prog.Error = errStr
@@ -443,7 +422,7 @@ func sendFinal(sid string, task syncTask, records []modbus.HourRecord, errStr st
 		prog.Pct = 0
 		prog.Records = nil
 	}
-	msg := fmt.Sprintf("Sync: %s (%d ms)", task.Key, elapsed)
+	msg := fmt.Sprintf("Sync: %s (%d ms) — %d registros hist.", task.Key, elapsed, len(records))
 	if note != "" {
 		msg += " — " + note
 	}
@@ -485,10 +464,10 @@ func PartialSyncHandler(c *gin.Context) {
 	defer client.Close()
 
 	var dbBatch []idb.StationRecord
-	records := make([]modbus.HourRecord, 0, len(req.Pointers))
+	var records []modbus.HourRecord
 	for _, ptr := range req.Pointers {
 		data, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, req.DBAddress, ptr, nil)
-		rec := modbus.HourRecord{Hour: int(ptr / 10), Ptr: ptr}
+		rec := modbus.HourRecord{Ptr: ptr}
 		sr := idb.StationRecord{Ptr: int(ptr)}
 		if err == nil {
 			rec.Valid = true
@@ -496,10 +475,15 @@ func PartialSyncHandler(c *gin.Context) {
 			sr.Valid = true
 			sr.Hex = rec.Hex
 			sr.RawHex = buildRawHex(req.ID, modbus.FCReadHoldingRegisters, data)
-			rec.Modes = modbus.DecodeAllModes(data)
-			for i := range rec.Modes {
-				rec.Modes[i].Sanitize()
+			modes := modbus.DecodeAllModes(data)
+			for i := range modes {
+				modes[i].Sanitize()
 			}
+			if fecha, hora, ts, ok := modbus.DecodeROCDateTime(modes, req.Endian); ok {
+				rec.Fecha, rec.Hora, rec.TS = fecha, hora, ts
+				sr.Fecha, sr.Hora = fecha, hora
+			}
+			rec.Modes = modes
 		}
 		records = append(records, rec)
 		dbBatch = append(dbBatch, sr)
@@ -507,6 +491,7 @@ func PartialSyncHandler(c *gin.Context) {
 
 	if DB != nil && req.TaskKey != "" {
 		_ = idb.UpsertRecords(DB, req.TaskKey, dbBatch)
+		_ = idb.UpsertHistory(DB, req.TaskKey, dbBatch)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"records": records})
@@ -514,8 +499,8 @@ func PartialSyncHandler(c *gin.Context) {
 
 // ─── DB viewer endpoint ───────────────────────────────────────────────────────
 
-// LoadFromDBHandler returns cached records from SQLite for the requested stations,
-// without connecting to any device. Used by the frontend "Load from DB" feature.
+// LoadFromDBHandler returns all history records from SQLite for the requested
+// stations without connecting to any device.
 func LoadFromDBHandler(c *gin.Context) {
 	if DB == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "base de datos no disponible"})
@@ -544,21 +529,11 @@ func LoadFromDBHandler(c *gin.Context) {
 	result := make(map[string]gin.H, len(tasks))
 
 	for _, t := range tasks {
-		cached, err := idb.GetTaskRecords(DB, t.Key)
-		if err != nil || len(cached) == 0 {
+		records := historyRecords(t)
+		if len(records) == 0 {
 			continue
 		}
-		meta, _ := idb.GetTaskMeta(DB, t.Key)
-		refPtr, refTime := -1, int64(0)
-		if meta != nil {
-			refPtr, refTime = meta.RefPtr, meta.RefTime
-		}
-		records := mergeRecords(cached, nil)
-		result[t.Key] = gin.H{
-			"records":  records,
-			"ref_ptr":  refPtr,
-			"ref_time": refTime,
-		}
+		result[t.Key] = gin.H{"records": records}
 	}
 
 	c.JSON(http.StatusOK, result)
