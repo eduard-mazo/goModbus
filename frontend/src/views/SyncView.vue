@@ -1,212 +1,219 @@
 <template>
-  <div class="p-4 space-y-3">
+  <div class="flex flex-col h-full">
 
-    <!-- ── Station selection ───────────────────────────────────────────────── -->
-    <div class="card">
-      <div class="card-head">
-        <span class="card-title">Selección de Estaciones</span>
-        <div class="flex gap-2">
-          <button class="btn btn-ghost btn-sm" @click="sync.selectedNames = stations.map(s => s.name)">Todas</button>
-          <button class="btn btn-ghost btn-sm" @click="sync.selectedNames = []">Ninguna</button>
-        </div>
-      </div>
-      <div class="p-3">
-        <div v-if="stations.length === 0" class="text-xs text-g-400 py-2">
-          Sin estaciones en config.yaml — cargue desde la barra lateral.
-        </div>
-        <div class="grid grid-cols-3 gap-2 mb-3" v-else>
-          <label
-            v-for="st in stations" :key="st.name"
-            class="flex items-center gap-2 rounded p-2 cursor-pointer border transition-all"
-            :class="sync.selectedNames.includes(st.name)
-              ? 'border-lime bg-lime-x-lt'
-              : 'border-g-200 hover:border-g-300'"
+    <!-- ── Top: station selection + sync control ─────────────────────────── -->
+    <div class="shrink-0 px-4 pt-3 pb-2 border-b border-g-200 bg-white">
+
+      <!-- Station chips with inline progress -->
+      <div class="flex flex-wrap gap-2 mb-2">
+        <label
+          v-for="st in stations" :key="st.name"
+          class="relative flex flex-col gap-0.5 rounded-lg border px-3 py-1.5 cursor-pointer transition-all select-none"
+          :class="sync.selectedNames.includes(st.name)
+            ? 'border-lime bg-lime-x-lt'
+            : 'border-g-200 hover:border-g-300 bg-white'"
+          style="min-width:140px; max-width:200px;"
+        >
+          <div class="flex items-center gap-2">
+            <input type="checkbox" :value="st.name" v-model="sync.selectedNames" class="accent-lime shrink-0" />
+            <span class="text-xs font-semibold text-g-700 truncate">{{ st.name }}</span>
+            <!-- Done indicator -->
+            <span v-if="isStationDone(st.name)" class="ml-auto text-forest text-xs font-bold shrink-0">✓</span>
+            <span v-else-if="stationPct(st.name) > 0" class="ml-auto text-xs font-mono text-lime shrink-0">
+              {{ stationPct(st.name) }}%
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="font-mono text-g-400 truncate" style="font-size:9px;">{{ st.ip }}</span>
+            <span v-if="st.medidores?.length" class="text-g-400 shrink-0" style="font-size:9px;">
+              · {{ st.medidores.length }} med.
+            </span>
+          </div>
+          <!-- Inline progress bar -->
+          <div
+            v-if="stationPct(st.name) > 0 && !isStationDone(st.name)"
+            class="h-0.5 rounded-full bg-g-200 overflow-hidden mt-0.5"
           >
-            <input type="checkbox" :value="st.name" v-model="sync.selectedNames" class="accent-lime" />
-            <div class="min-w-0">
-              <div class="text-xs font-semibold text-g-700 truncate">{{ st.name }}</div>
-              <div class="font-mono text-g-400" style="font-size:10px;">{{ st.ip }}</div>
-            </div>
-          </label>
-        </div>
+            <div class="h-full bg-lime rounded-full transition-all duration-300"
+                 :style="`width:${stationPct(st.name)}%`" />
+          </div>
+          <div v-if="stationError(st.name)" class="text-red-500" style="font-size:9px;">
+            {{ stationError(st.name) }}
+          </div>
+        </label>
+      </div>
+
+      <!-- Controls row -->
+      <div class="flex items-center gap-3">
         <button
-          class="btn btn-forest"
+          class="btn btn-forest btn-sm"
           :disabled="sync.loading || sync.selectedNames.length === 0"
           @click="startSync"
         >
-          <svg v-if="!sync.loading" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
-          <svg v-else class="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/></svg>
-          {{ sync.loading ? 'Sincronizando…' : `Sincronizar ${sync.selectedNames.length} estación(es)` }}
+          <svg v-if="!sync.loading" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+          <svg v-else class="animate-spin" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/></svg>
+          {{ sync.loading ? 'Sincronizando…' : `Sincronizar (${sync.selectedNames.length})` }}
         </button>
+        <button class="btn btn-ghost btn-sm" @click="sync.selectedNames = stations.map(s => s.name)">Todas</button>
+        <button class="btn btn-ghost btn-sm" @click="sync.selectedNames = []">Ninguna</button>
+        <span v-if="sync.loading" class="text-xs text-g-400 ml-1">
+          {{ completedCount }}/{{ sync.stationsExpected.length }} tareas completadas
+        </span>
       </div>
     </div>
 
-    <!-- ── Progress bars ───────────────────────────────────────────────────── -->
-    <div v-if="sync.stationsExpected.length > 0" class="card">
-      <div class="card-head"><span class="card-title">Progreso de Descarga</span></div>
-      <div class="p-3 space-y-2">
-        <div v-for="name in sync.stationsExpected" :key="name">
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-xs font-semibold text-g-700">{{ name }}</span>
-            <div class="flex items-center gap-2">
-              <span v-if="sync.stationResults[name]" class="text-xs font-semibold text-forest">✓ Completo</span>
-              <span class="text-xs font-mono text-g-500">
-                {{ sync.progress[name]?.done || 0 }}/{{ sync.progress[name]?.total || 840 }}
-              </span>
-              <span class="text-xs font-bold font-mono" :class="sync.stationResults[name] ? 'text-forest' : 'text-lime'">
-                {{ sync.progress[name]?.pct || 0 }}%
-              </span>
-              <span v-if="sync.progress[name]?.error" class="text-xs text-red-500">{{ sync.progress[name].error }}</span>
-            </div>
-          </div>
-          <div class="h-1.5 rounded-full bg-g-200 overflow-hidden">
-            <div
-              class="h-full rounded-full transition-all duration-300"
-              :class="sync.stationResults[name] ? 'bg-forest' : 'bg-lime'"
-              :style="`width:${sync.progress[name]?.pct || 0}%`"
-            ></div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- ── Main: task tabs + content ─────────────────────────────────────── -->
+    <div class="flex-1 flex flex-col overflow-hidden">
 
-    <!-- ── Results ─────────────────────────────────────────────────────────── -->
-    <template v-if="Object.keys(sync.stationResults).length > 0">
-
-      <!-- Task/station tabs -->
-      <div class="flex gap-1 flex-wrap">
+      <!-- Task tabs (scrollable row) -->
+      <div
+        v-if="Object.keys(sync.stationResults).length > 0"
+        class="shrink-0 flex items-center gap-1 px-4 py-1.5 border-b border-g-100 overflow-x-auto"
+        style="scrollbar-width:thin;"
+      >
         <button
-          v-for="name in Object.keys(sync.stationResults)" :key="name"
-          class="btn btn-sm"
-          :class="sync.selectedIdx === name ? 'btn-forest' : 'btn-ghost'"
-          @click="sync.selectedIdx = name"
-        >{{ name }}</button>
+          v-for="key in Object.keys(sync.stationResults)" :key="key"
+          class="btn btn-sm shrink-0"
+          :class="sync.selectedIdx === key ? 'btn-forest' : 'btn-ghost'"
+          @click="sync.selectedIdx = key"
+        >{{ key }}</button>
       </div>
 
-      <!-- View tabs: Gráfica | Tabla -->
-      <div v-if="sync.selectedIdx && currentRecords" class="flex border-b border-g-200">
-        <button
-          class="px-4 py-2 text-sm font-medium border-b-2 transition-colors"
-          :class="activeTab === 'chart'
-            ? 'border-lime text-lime'
-            : 'border-transparent text-g-500 hover:text-g-700'"
-          @click="activeTab = 'chart'"
-        >Gráfica</button>
-        <button
-          class="px-4 py-2 text-sm font-medium border-b-2 transition-colors"
-          :class="activeTab === 'table'
-            ? 'border-lime text-lime'
-            : 'border-transparent text-g-500 hover:text-g-700'"
-          @click="activeTab = 'table'"
-        >Tabla</button>
-      </div>
+      <!-- View tabs + content -->
+      <div v-if="sync.selectedIdx && currentRecords" class="flex-1 flex flex-col overflow-hidden">
 
-      <!-- ── Chart tab ──────────────────────────────────────────────────────── -->
-      <div v-if="activeTab === 'chart' && sync.selectedIdx && currentRecords" class="card">
-        <div class="card-head">
-          <span class="card-title">
-            Análisis — {{ sync.selectedIdx }}
-            <span class="text-g-400 font-normal text-xs ml-1">(doble clic en nombre para renombrar señal)</span>
-          </span>
-          <div class="flex items-center gap-2">
-            <label class="lbl mb-0 mr-1">Endian</label>
+        <!-- View tabs -->
+        <div class="shrink-0 flex items-center border-b border-g-200 px-4" style="background:#fafcfa;">
+          <button
+            class="px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+            :class="sync.viewTab === 'chart'
+              ? 'border-lime text-lime'
+              : 'border-transparent text-g-500 hover:text-g-700'"
+            @click="sync.viewTab = 'chart'"
+          >
+            <svg class="inline mr-1.5" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Gráfica
+          </button>
+          <button
+            class="px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+            :class="sync.viewTab === 'table'
+              ? 'border-lime text-lime'
+              : 'border-transparent text-g-500 hover:text-g-700'"
+            @click="sync.viewTab = 'table'"
+          >
+            <svg class="inline mr-1.5" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            Tabla
+          </button>
+
+          <!-- Endian selector (shared for both tabs) -->
+          <div class="ml-auto flex items-center gap-2">
+            <label class="text-xs text-g-500">Endian</label>
             <select class="fs" style="width:auto;" v-model="rocStore.dbEndian">
               <option value="abcd">ABCD</option>
               <option value="dcba">DCBA</option>
               <option value="cdab">CDAB (ROC)</option>
               <option value="badc">BADC</option>
             </select>
-          </div>
-        </div>
-        <div class="p-3">
-          <MultiSignalChart
-            :records="currentRecords"
-            :endian="rocStore.dbEndian"
-            :stationName="sync.selectedIdx"
-            :signalNames="currentSignalNames"
-          />
-        </div>
-      </div>
-
-      <!-- ── Table tab (Supabase style) ────────────────────────────────────── -->
-      <div v-if="activeTab === 'table' && sync.selectedIdx && currentRecords"
-           class="rounded-xl overflow-hidden border"
-           style="border-color:#30363d;">
-
-        <!-- Table toolbar -->
-        <div class="flex items-center justify-between px-4 py-2 border-b"
-             style="background:#161b22; border-color:#21262d;">
-          <div class="flex items-center gap-3">
-            <span class="text-xs font-semibold" style="color:#8b949e;">
-              {{ currentRecords.length }} registros ·
-              {{ currentRecords.filter(r => r.valid).length }} válidos ·
-              {{ currentRecords.filter(r => !r.valid).length }} fallidos
-            </span>
-          </div>
-          <div class="flex items-center gap-3">
-            <label class="text-xs" style="color:#8b949e;">Endian</label>
-            <select
-              class="text-xs rounded px-2 py-0.5"
-              style="background:#0d1117; color:#e6edf3; border:1px solid #30363d; outline:none;"
-              v-model="rocStore.dbEndian"
-            >
-              <option value="abcd">ABCD</option>
-              <option value="dcba">DCBA</option>
-              <option value="cdab">CDAB (ROC)</option>
-              <option value="badc">BADC</option>
-            </select>
             <button
-              class="text-xs px-3 py-1 rounded font-medium transition-colors"
-              style="background:#21262d; color:#e6edf3; border:1px solid #30363d;"
+              class="btn btn-sm btn-ghost"
               :disabled="sync.loading"
               @click="sync.retryStation(sync.selectedIdx, stations, sessionId)"
-            >Reintentar fallos</button>
+              title="Reintentar punteros fallidos"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+              Reintentar
+            </button>
           </div>
         </div>
 
-        <!-- Scrollable table -->
-        <div class="overflow-auto" style="max-height:560px; background:#0d1117;">
-          <table style="width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:11px; white-space:nowrap; min-width:1000px;">
-            <thead style="position:sticky; top:0; z-index:10;">
-              <tr style="background:#161b22; border-bottom:1px solid #21262d;">
-                <th style="padding:6px 12px; text-align:right; color:#8b949e; font-weight:500; border-right:1px solid #21262d;">Ptr</th>
-                <th style="padding:6px 12px; text-align:left; color:#8b949e; font-weight:500; border-right:1px solid #21262d;">Fecha / Hora</th>
-                <th
-                  v-for="(name, i) in sigLabels" :key="i"
-                  style="padding:6px 12px; text-align:right; color:#8b949e; font-weight:500; border-right:1px solid #21262d; max-width:120px; overflow:hidden; text-overflow:ellipsis;"
-                  :title="name"
-                >{{ name }}</th>
-                <th style="padding:6px 12px; text-align:center; color:#8b949e; font-weight:500;">OK</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(rec, idx) in currentRecords" :key="rec.ptr"
-                :style="`background:${rec.valid ? (idx % 2 === 0 ? '#0d1117' : '#0f1319') : '#160a0a'}; border-bottom:1px solid #21262d;`"
-              >
-                <td style="padding:3px 12px; text-align:right; color:#484f58; border-right:1px solid #1c2128;">{{ rec.ptr }}</td>
-                <td style="padding:3px 12px; text-align:left; color:#8b949e; border-right:1px solid #1c2128;">{{ fmtRecDate(rec) }}</td>
-                <td
-                  v-for="(_, si) in sigLabels" :key="si"
-                  style="padding:3px 12px; text-align:right; border-right:1px solid #1c2128; font-variant-numeric:tabular-nums;"
-                  :style="`color:${rec.valid && rec.modes?.[si] ? '#7ad400' : '#484f58'}`"
+        <!-- ── Gráfica ───────────────────────────────────────────────────── -->
+        <div
+          v-if="sync.viewTab === 'chart'"
+          class="flex-1 overflow-y-auto p-4"
+        >
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">{{ sync.selectedIdx }}</span>
+              <span class="text-g-400 text-xs font-normal">
+                {{ validCount }} / {{ currentRecords.length }} registros válidos
+              </span>
+            </div>
+            <div class="p-4">
+              <MultiSignalChart
+                :records="currentRecords"
+                :endian="rocStore.dbEndian"
+                :stationName="sync.selectedIdx"
+                :signalNames="currentSignalNames"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Tabla (Supabase style) ────────────────────────────────────── -->
+        <div v-if="sync.viewTab === 'table'" class="flex-1 overflow-hidden flex flex-col">
+          <!-- Toolbar -->
+          <div
+            class="shrink-0 flex items-center justify-between px-4 py-2 border-b"
+            style="background:#161b22; border-color:#21262d;"
+          >
+            <span style="color:#8b949e; font-size:11px; font-family:monospace;">
+              {{ currentRecords.length }} registros ·
+              {{ validCount }} válidos ·
+              {{ currentRecords.length - validCount }} fallidos
+            </span>
+          </div>
+
+          <!-- Table -->
+          <div class="flex-1 overflow-auto" style="background:#0d1117;">
+            <table style="width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:11px; white-space:nowrap; min-width:900px;">
+              <thead style="position:sticky; top:0; z-index:10; background:#161b22; border-bottom:1px solid #21262d;">
+                <tr>
+                  <th style="padding:6px 12px; text-align:right; color:#8b949e; font-weight:500; border-right:1px solid #21262d;">Ptr</th>
+                  <th style="padding:6px 12px; text-align:left; color:#8b949e; font-weight:500; border-right:1px solid #21262d; min-width:140px;">Fecha / Hora</th>
+                  <th
+                    v-for="(name, i) in sigLabels" :key="i"
+                    style="padding:6px 10px; text-align:right; color:#8b949e; font-weight:500; border-right:1px solid #21262d; max-width:110px; overflow:hidden; text-overflow:ellipsis;"
+                    :title="name"
+                  >{{ name }}</th>
+                  <th style="padding:6px 12px; text-align:center; color:#8b949e; font-weight:500;">OK</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(rec, idx) in currentRecords" :key="rec.ptr"
+                  :style="`background:${rec.valid ? (idx % 2 === 0 ? '#0d1117' : '#0f1319') : '#160a0a'}; border-bottom:1px solid #1c2128;`"
                 >
-                  {{ rec.valid && rec.modes?.[si]
-                    ? rec.modes[si][rocStore.dbEndian]?.toFixed(4)
-                    : '—' }}
-                </td>
-                <td style="padding:3px 12px; text-align:center;">
-                  <span :style="`font-size:9px; color:${rec.valid ? '#3fb950' : '#f85149'}`">
-                    {{ rec.valid ? '●' : '○' }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  <td style="padding:2px 12px; text-align:right; color:#484f58; border-right:1px solid #1c2128;">{{ rec.ptr }}</td>
+                  <td style="padding:2px 12px; text-align:left; color:#8b949e; border-right:1px solid #1c2128;">{{ fmtRecDate(rec) }}</td>
+                  <td
+                    v-for="(_, si) in sigLabels" :key="si"
+                    style="padding:2px 10px; text-align:right; border-right:1px solid #1c2128;"
+                    :style="`color:${rec.valid && rec.modes?.[si] ? '#7ad400' : '#333'}`"
+                  >
+                    {{ rec.valid && rec.modes?.[si]
+                      ? rec.modes[si][rocStore.dbEndian]?.toFixed(4)
+                      : '—' }}
+                  </td>
+                  <td style="padding:2px 12px; text-align:center;">
+                    <span :style="`font-size:8px; color:${rec.valid ? '#3fb950' : '#f85149'}`">{{ rec.valid ? '●' : '○' }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Empty state -->
+      <div v-else-if="!sync.loading" class="flex-1 flex items-center justify-center">
+        <div class="text-center space-y-2">
+          <svg class="mx-auto text-g-300" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+          <p class="text-g-400 text-sm">Selecciona estaciones y sincroniza para ver datos</p>
         </div>
       </div>
 
-    </template>
+    </div>
   </div>
 </template>
 
@@ -222,34 +229,62 @@ const sync      = useSyncStore()
 const rocStore  = useRocStore()
 const sessionId = useSessionId()
 const stations  = ref([])
-const activeTab = ref('chart')
 
-// Default signal labels (used when station has no signal_names in config)
 const DEFAULT_SIG = [
   'Flow Min', 'Raw Pulses', 'Pf PSI', 'Tf DEG F',
   'Multiplier', 'Uncorr Vol MCF', 'Vol Accum MCF', 'Energy MMBTU',
 ]
 
+// ── Computed ──────────────────────────────────────────────────────────────────
 const currentRecords = computed(() =>
   sync.selectedIdx ? sync.stationResults[sync.selectedIdx] : null
 )
 
-// Resolve station config for the currently selected task key ("STATION / M1" → "STATION")
 const currentStation = computed(() => {
   if (!sync.selectedIdx) return null
-  const stationName = sync.selectedIdx.split(' / ')[0]
-  return stations.value.find(s => s.name === stationName) || null
+  const stName = sync.selectedIdx.split(' / ')[0]
+  return stations.value.find(s => s.name === stName) || null
 })
 
-// Signal names from config (falls back to DEFAULT_SIG)
 const currentSignalNames = computed(() => currentStation.value?.signal_names || [])
 
-// Labels used in the table header (config → DEFAULT_SIG)
 const sigLabels = computed(() =>
   DEFAULT_SIG.map((d, i) => currentSignalNames.value[i] || d)
 )
 
-// ── Date decoder (matches MultiSignalChart) ──────────────────────────────────
+const validCount = computed(() =>
+  currentRecords.value?.filter(r => r.valid).length ?? 0
+)
+
+const completedCount = computed(() =>
+  sync.stationsExpected.filter(k => sync.stationResults[k]).length
+)
+
+// ── Per-station progress aggregation ─────────────────────────────────────────
+// Tasks for a station may be "STATION" or "STATION / M1", "STATION / M2" etc.
+function stationPct(stName) {
+  let done = 0, total = 0
+  for (const [key, prog] of Object.entries(sync.progress)) {
+    if (key.split(' / ')[0] !== stName) continue
+    done  += prog.done  ?? 0
+    total += prog.total ?? 840
+  }
+  return total > 0 ? Math.round(done * 100 / total) : 0
+}
+
+function isStationDone(stName) {
+  const tasks = sync.stationsExpected.filter(k => k.split(' / ')[0] === stName)
+  return tasks.length > 0 && tasks.every(k => !!sync.stationResults[k])
+}
+
+function stationError(stName) {
+  for (const [key, prog] of Object.entries(sync.progress)) {
+    if (key.split(' / ')[0] === stName && prog.error) return prog.error
+  }
+  return null
+}
+
+// ── Date decoder (matches MultiSignalChart) ───────────────────────────────────
 function parseRocDate(dateRaw, timeRaw) {
   if (!dateRaw && !timeRaw) return null
   const year   = ((dateRaw >> 9) & 0x7F) + 2000
@@ -271,7 +306,7 @@ function fmtRecDate(rec) {
   return `${dd}/${mm}/${d.getFullYear()} ${hh}:${mn}`
 }
 
-// ── Actions ──────────────────────────────────────────────────────────────────
+// ── Actions ───────────────────────────────────────────────────────────────────
 async function loadStations() {
   try {
     const { data } = await axios.get('/api/config')

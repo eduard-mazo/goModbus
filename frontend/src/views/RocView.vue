@@ -1,5 +1,5 @@
 <template>
-  <div class="p-4 space-y-3">
+  <div class="p-4 space-y-3 overflow-y-auto flex-1">
 
     <!-- Config row: Pointer + DB -->
     <div class="grid grid-cols-2 gap-3">

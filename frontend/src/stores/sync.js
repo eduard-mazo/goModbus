@@ -6,6 +6,7 @@ export const useSyncStore = defineStore('sync', () => {
   const loading = ref(false)
   const selectedNames = ref([])
   const selectedIdx = ref(null)
+  const viewTab = ref('chart')   // 'chart' | 'table' — shared so sidebar can switch
   const progress = ref({})        // { taskKey: SyncProgress }
   const stationResults = ref({})  // { taskKey: HourRecord[840] }
   const stationsExpected = ref([])
@@ -97,7 +98,7 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   return {
-    loading, selectedNames, selectedIdx,
+    loading, selectedNames, selectedIdx, viewTab,
     progress, stationResults, stationsExpected, chartSig,
     handleProgress, startFullSync, retryStation,
   }

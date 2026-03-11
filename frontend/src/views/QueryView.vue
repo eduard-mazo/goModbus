@@ -1,5 +1,5 @@
 <template>
-  <div class="p-4 space-y-3">
+  <div class="p-4 space-y-3 overflow-y-auto flex-1">
 
     <!-- Parameters card -->
     <div class="card">

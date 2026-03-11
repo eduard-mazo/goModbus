@@ -41,7 +41,7 @@
       </div>
 
       <!-- Page content -->
-      <div class="flex-1 overflow-y-auto">
+      <div class="flex-1 overflow-hidden flex flex-col">
         <router-view />
       </div>
 
