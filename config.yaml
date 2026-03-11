@@ -25,14 +25,6 @@ stations:
         name: "M2"
         pointer_address: 10000
         base_data_address: 704
-      - label: 3
-        name: "M3"
-        pointer_address: 10001
-        base_data_address: 708
-      - label: 4
-        name: "M4"
-        pointer_address: 10001
-        base_data_address: 712
 
   - name: "LLANOS"
     ip: "10.50.184.208"
@@ -117,7 +109,6 @@ stations:
     endian: "cdab"
     data_type: "float32"
     pointer_address: 10000
-    base_data_address: 700
     data_registers_count: 2
     signal_names:
       - "Caudal Mín"
@@ -128,6 +119,23 @@ stations:
       - "Vol. No Corr. MCF"
       - "Vol. Acum. MCF"
       - "Energía MMBTU"
+    medidores:
+      - label: 1
+        name: "M1"
+        pointer_address: 10000
+        base_data_address: 700
+      - label: 2
+        name: "M2"
+        pointer_address: 10000
+        base_data_address: 704
+      - label: 3
+        name: "M3"
+        pointer_address: 10001
+        base_data_address: 708
+      - label: 4
+        name: "M4"
+        pointer_address: 10001
+        base_data_address: 712
 
   - name: "NARE"
     ip: "10.14.201.3"
