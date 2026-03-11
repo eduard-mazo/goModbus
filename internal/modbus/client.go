@@ -137,12 +137,14 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 		if desc == "" {
 			desc = "Error desconocido"
 		}
-		c.log("ERROR", fmt.Sprintf("Excepción Modbus 0x%02X: %s", code, desc), resp, elapsed, nil, "")
+		// Always log both TX and RX frames on exception, regardless of Silent
+		c.log("ERROR", fmt.Sprintf("Excepción 0x%02X: %s\n  TX[%d]: %X\n  RX[%d]: %X",
+			code, desc, len(req), req, n, resp[:n]), nil, elapsed, nil, "")
 		return nil, req, elapsed, fmt.Errorf("excepción 0x%02X: %s", code, desc)
 	}
 
 	if !c.Silent {
-		c.log("INFO", fmt.Sprintf("RX OK %dms | %d bytes datos", elapsed.Milliseconds(), n), resp, elapsed, nil, "")
+		c.log("INFO", fmt.Sprintf("RX OK %dms | %d bytes", elapsed.Milliseconds(), n), resp, elapsed, nil, "")
 	}
 	c.TransactionID++
 

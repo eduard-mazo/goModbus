@@ -197,7 +197,8 @@ func syncStation(sid string, task syncTask) {
 
 	// 3. Connect to device
 	client := modbus.NewModbusClient(task.IP, task.Port, task.UnitID, task.Endian)
-	client.Silent = true
+	client.Silent = true // suppress per-frame INFO; errors always logged
+	client.SID = sid     // route logs to the requesting session only
 	if err := client.Connect(); err != nil {
 		if hasHistory {
 			records := historyRecords(task)
@@ -211,11 +212,21 @@ func syncStation(sid string, task syncTask) {
 
 	// 4. Read current pointer (the most recently written circular-buffer slot)
 	currentPtr := -1
-	if ptrData, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, 1, nil); err == nil && len(ptrData) >= 2 {
+	ptrData, ptrReq, _, ptrErr := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, 1, nil)
+	if ptrErr == nil && len(ptrData) >= 2 {
 		v := int(binary.BigEndian.Uint16(ptrData[0:2]))
 		if v >= 0 && v < syncTotal {
 			currentPtr = v
 		}
+		logger.SessionBroadcast(sid, logger.LogMessage{
+			Level:   "DEBUG",
+			Message: fmt.Sprintf("[%s] Ptr leído: %d | TX: %X | RX: %X", task.Key, currentPtr, ptrReq, ptrData),
+		})
+	} else if ptrErr != nil {
+		logger.SessionBroadcast(sid, logger.LogMessage{
+			Level:   "ERROR",
+			Message: fmt.Sprintf("[%s] Error leyendo ptr addr=%d qty=1 | TX: %X | err: %v", task.Key, task.PtrAddr, ptrReq, ptrErr),
+		})
 	}
 	if currentPtr < 0 {
 		if hasHistory {
@@ -229,8 +240,25 @@ func syncStation(sid string, task syncTask) {
 
 	// 5. Read the record at currentPtr to get T_current (needed for delta calc)
 	var currentPtrData []byte
-	if d, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.DBAddr, uint16(currentPtr), nil); err == nil {
-		currentPtrData = d
+	if currentPtr > 0 { // qty=0 is invalid Modbus; skip if ptr=0
+		d, curReq, _, curErr := client.Execute(modbus.FCReadHoldingRegisters, task.DBAddr, uint16(currentPtr), nil)
+		if curErr == nil {
+			currentPtrData = d
+			logger.SessionBroadcast(sid, logger.LogMessage{
+				Level:   "DEBUG",
+				Message: fmt.Sprintf("[%s] Registro ptr=%d leído | TX: %X | RX(%d): %X", task.Key, currentPtr, curReq, len(d), d),
+			})
+		} else {
+			logger.SessionBroadcast(sid, logger.LogMessage{
+				Level:   "ERROR",
+				Message: fmt.Sprintf("[%s] Error leyendo registro ptr=%d addr=%d qty=%d | TX: %X", task.Key, currentPtr, task.DBAddr, currentPtr, curReq),
+			})
+		}
+	} else {
+		logger.SessionBroadcast(sid, logger.LogMessage{
+			Level:   "WARN",
+			Message: fmt.Sprintf("[%s] ptr=0 — omitiendo lectura de registro actual (qty=0 inválido), se hará full sync", task.Key),
+		})
 	}
 
 	// 6. Compute which ptrs to fetch (time-based delta vs full sync)
@@ -270,10 +298,21 @@ func syncStation(sid string, task syncTask) {
 		// Reuse the already-read record for currentPtr
 		if p == currentPtr && len(currentPtrData) > 0 {
 			data = currentPtrData
+		} else if p == 0 {
+			// qty=0 is invalid standard Modbus; log and skip
+			logger.SessionBroadcast(sid, logger.LogMessage{
+				Level:   "WARN",
+				Message: fmt.Sprintf("[%s] ptr=0 omitido (qty=0 inválido en Modbus estándar)", task.Key),
+			})
 		} else {
-			d, _, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.DBAddr, uint16(p), nil)
+			d, txFrame, _, err := client.Execute(modbus.FCReadHoldingRegisters, task.DBAddr, uint16(p), nil)
 			if err == nil {
 				data = d
+			} else {
+				logger.SessionBroadcast(sid, logger.LogMessage{
+					Level:   "ERROR",
+					Message: fmt.Sprintf("[%s] ptr=%d err: %v | TX: %X", task.Key, p, err, txFrame),
+				})
 			}
 		}
 
