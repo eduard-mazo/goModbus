@@ -102,12 +102,13 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 	c.Conn.SetDeadline(time.Now().Add(c.Timeout))
 	start := time.Now()
 
+	dest := fmt.Sprintf("%s:%d", c.Host, c.Port)
 	if !c.Silent {
-		c.log("DEBUG", fmt.Sprintf("TX FC=0x%02X addr=%d qty=%d", fc, addr, qty), req, 0, nil, "")
+		c.log("DEBUG", fmt.Sprintf("→ %s  FC=0x%02X addr=%d qty=%d  TX[%d]: %X", dest, fc, addr, qty, len(req), req), nil, 0, nil, "")
 	}
 
 	if _, err := c.Conn.Write(req); err != nil {
-		c.log("ERROR", fmt.Sprintf("TX error FC=0x%02X addr=%d: %v", fc, addr, err), nil, 0, nil, "")
+		c.log("ERROR", fmt.Sprintf("→ %s  TX error FC=0x%02X addr=%d: %v  TX[%d]: %X", dest, fc, addr, err, len(req), req), nil, 0, nil, "")
 		return nil, req, 0, fmt.Errorf("error TX: %w", err)
 	}
 
@@ -116,14 +117,14 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 	elapsed := time.Since(start)
 
 	if err != nil {
-		c.log("ERROR", fmt.Sprintf("RX error FC=0x%02X addr=%d [%dms]: %v", fc, addr, elapsed.Milliseconds(), err), nil, elapsed, nil, "")
+		c.log("ERROR", fmt.Sprintf("← %s  RX error FC=0x%02X addr=%d [%dms]: %v  TX[%d]: %X", dest, fc, addr, elapsed.Milliseconds(), err, len(req), req), nil, elapsed, nil, "")
 		return nil, req, elapsed, fmt.Errorf("error RX: %w", err)
 	}
 
 	resp := buf[:n]
 
 	if n < 8 {
-		c.log("ERROR", fmt.Sprintf("Respuesta incompleta FC=0x%02X: %d bytes (mín 8)", fc, n), resp, elapsed, nil, "")
+		c.log("ERROR", fmt.Sprintf("← %s  Respuesta incompleta FC=0x%02X: %d bytes (mín 8)  TX[%d]: %X  RX[%d]: %X", dest, fc, n, len(req), req, n, resp), nil, elapsed, nil, "")
 		return nil, req, elapsed, fmt.Errorf("respuesta incompleta (%d bytes)", n)
 	}
 
@@ -138,13 +139,13 @@ func (c *ModbusClient) Execute(fc byte, addr uint16, qty uint16, writeData []byt
 			desc = "Error desconocido"
 		}
 		// Always log both TX and RX frames on exception, regardless of Silent
-		c.log("ERROR", fmt.Sprintf("Excepción 0x%02X: %s\n  TX[%d]: %X\n  RX[%d]: %X",
-			code, desc, len(req), req, n, resp[:n]), nil, elapsed, nil, "")
+		c.log("ERROR", fmt.Sprintf("← %s  Excepción 0x%02X: %s\n  TX[%d]: %X\n  RX[%d]: %X",
+			dest, code, desc, len(req), req, n, resp[:n]), nil, elapsed, nil, "")
 		return nil, req, elapsed, fmt.Errorf("excepción 0x%02X: %s", code, desc)
 	}
 
 	if !c.Silent {
-		c.log("INFO", fmt.Sprintf("RX OK %dms | %d bytes", elapsed.Milliseconds(), n), resp, elapsed, nil, "")
+		c.log("INFO", fmt.Sprintf("← %s  OK %dms | %d bytes  RX[%d]: %X", dest, elapsed.Milliseconds(), n, n, resp), nil, elapsed, nil, "")
 	}
 	c.TransactionID++
 

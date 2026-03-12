@@ -10,22 +10,29 @@ type Config struct {
 // MedidorConfig describes a single meter (medidor) within a station.
 // Used when one ROC device contains multiple independent flow meters,
 // each with its own circular-buffer base address and/or pointer register.
+// PtrEndian and DBEndian override the station-level endian when set.
 type MedidorConfig struct {
-	Label          int    `yaml:"label"             json:"label"`
-	Name           string `yaml:"name"              json:"name"`
-	PointerAddress uint16 `yaml:"pointer_address"   json:"pointer_address"`
-	DBAddress      uint16 `yaml:"base_data_address" json:"base_data_address"`
+	Label          int               `yaml:"label"             json:"label"`
+	Name           string            `yaml:"name"              json:"name"`
+	PointerAddress uint16            `yaml:"pointer_address"   json:"pointer_address"`
+	DBAddress      uint16            `yaml:"base_data_address" json:"base_data_address"`
+	PtrEndian      modbus.Endianness `yaml:"ptr_endian"        json:"ptr_endian,omitempty"`
+	DBEndian       modbus.Endianness `yaml:"db_endian"         json:"db_endian,omitempty"`
 }
 
 // StationConfig describes a pre-configured ROC device.
 // If Medidores is non-empty the per-medidor addresses take precedence over
 // the station-level PointerAddress / DBAddress (which serve as defaults).
+// PtrEndian / DBEndian allow different endianness for pointer vs. data registers;
+// both fall back to Endian when not set.
 type StationConfig struct {
 	Name               string            `yaml:"name"                 json:"name"`
 	IP                 string            `yaml:"ip"                   json:"ip"`
 	Port               int               `yaml:"port"                 json:"port"`
 	ID                 byte              `yaml:"id"                   json:"id"`
 	Endian             modbus.Endianness `yaml:"endian"               json:"endian"`
+	PtrEndian          modbus.Endianness `yaml:"ptr_endian"           json:"ptr_endian,omitempty"`
+	DBEndian           modbus.Endianness `yaml:"db_endian"            json:"db_endian,omitempty"`
 	PointerAddress     uint16            `yaml:"pointer_address"      json:"pointer_address"`
 	DBAddress          uint16            `yaml:"base_data_address"    json:"base_data_address"`
 	DataRegistersCount uint16            `yaml:"data_registers_count" json:"data_registers_count"`

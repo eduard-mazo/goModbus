@@ -214,8 +214,8 @@ const dbLoadMsg = ref(null)
 
 // Signal names for display (start at modes index 2 — indices 0,1 are fecha/hora floats)
 const DEFAULT_SIG = [
-  'Flow Min', 'Raw Pulses', 'Pf PSI', 'Tf DEG F',
-  'Multiplier', 'Uncorr Vol MCF', 'Vol Accum MCF', 'Energy MMBTU',
+  'Caudal Mín', 'Pulsos Crudos', 'Presión Flujo', 'Temperatura Flujo',
+  'Multiplicador', 'Vol. No Corr. MCF', 'Vol. Acum. MCF', 'Energía MMBTU',
 ]
 
 const currentRecords = computed(() =>

@@ -70,32 +70,67 @@ type SyncRequest struct {
 }
 
 type syncTask struct {
-	Key     string // "STATION" or "STATION / M1"
-	Station string
-	IP      string
-	Port    int
-	UnitID  byte
-	Endian  modbus.Endianness
-	PtrAddr uint16
-	DBAddr  uint16
+	Key                string // "STATION" or "STATION / M1"
+	Station            string
+	IP                 string
+	Port               int
+	UnitID             byte
+	PtrEndian          modbus.Endianness // endian used to decode the pointer register
+	DBEndian           modbus.Endianness // endian used to decode historical data
+	PtrAddr            uint16
+	DBAddr             uint16
+	DataRegistersCount uint16 // 1 = pointer is uint16; 2 = pointer is float32 (2 regs)
 }
 
 func expandTasks(stations []config.StationConfig) []syncTask {
 	var tasks []syncTask
 	for _, s := range stations {
+		// Resolve station-level endians (ptr/db may differ; fall back to Endian)
+		stPtrEndian := s.PtrEndian
+		if stPtrEndian == "" {
+			stPtrEndian = s.Endian
+		}
+		stDBEndian := s.DBEndian
+		if stDBEndian == "" {
+			stDBEndian = s.Endian
+		}
+		drc := s.DataRegistersCount
+		if drc == 0 {
+			drc = 1
+		}
+
 		if len(s.Medidores) > 0 {
 			for _, m := range s.Medidores {
+				// Per-medidor endian overrides (if set in yaml)
+				ptrEndian := stPtrEndian
+				if m.PtrEndian != "" {
+					ptrEndian = m.PtrEndian
+				}
+				dbEndian := stDBEndian
+				if m.DBEndian != "" {
+					dbEndian = m.DBEndian
+				}
 				tasks = append(tasks, syncTask{
-					Key:     fmt.Sprintf("%s / %s", s.Name, m.Name),
-					Station: s.Name, IP: s.IP, Port: s.Port, UnitID: s.ID,
-					Endian: s.Endian, PtrAddr: m.PointerAddress, DBAddr: m.DBAddress,
+					Key:                fmt.Sprintf("%s / %s", s.Name, m.Name),
+					Station:            s.Name,
+					IP:                 s.IP, Port: s.Port, UnitID: s.ID,
+					PtrEndian:          ptrEndian,
+					DBEndian:           dbEndian,
+					PtrAddr:            m.PointerAddress,
+					DBAddr:             m.DBAddress,
+					DataRegistersCount: drc,
 				})
 			}
 		} else {
 			tasks = append(tasks, syncTask{
-				Key:     s.Name,
-				Station: s.Name, IP: s.IP, Port: s.Port, UnitID: s.ID,
-				Endian: s.Endian, PtrAddr: s.PointerAddress, DBAddr: s.DBAddress,
+				Key:                s.Name,
+				Station:            s.Name,
+				IP:                 s.IP, Port: s.Port, UnitID: s.ID,
+				PtrEndian:          stPtrEndian,
+				DBEndian:           stDBEndian,
+				PtrAddr:            s.PointerAddress,
+				DBAddr:             s.DBAddress,
+				DataRegistersCount: drc,
 			})
 		}
 	}
@@ -195,8 +230,8 @@ func syncStation(sid string, task syncTask) {
 
 	announceProgress(sid, task, 0, syncTotal, "conectando…")
 
-	// 3. Connect to device
-	client := modbus.NewModbusClient(task.IP, task.Port, task.UnitID, task.Endian)
+	// 3. Connect to device (endian is per-read: PtrEndian for ptr, DBEndian for data)
+	client := modbus.NewModbusClient(task.IP, task.Port, task.UnitID, task.DBEndian)
 	client.Silent = true // suppress per-frame INFO; errors always logged
 	client.SID = sid     // route logs to the requesting session only
 	if err := client.Connect(); err != nil {
@@ -210,22 +245,36 @@ func syncStation(sid string, task syncTask) {
 	}
 	defer client.Close()
 
-	// 4. Read current pointer (the most recently written circular-buffer slot)
+	// 4. Read current pointer using DataRegistersCount registers.
+	//    qty=1 → uint16 pointer; qty=2 → float32 pointer (decoded with PtrEndian).
 	currentPtr := -1
-	ptrData, ptrReq, _, ptrErr := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, 1, nil)
-	if ptrErr == nil && len(ptrData) >= 2 {
-		v := int(binary.BigEndian.Uint16(ptrData[0:2]))
-		if v >= 0 && v < syncTotal {
-			currentPtr = v
+	ptrData, ptrReq, _, ptrErr := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, task.DataRegistersCount, nil)
+	if ptrErr == nil {
+		if task.DataRegistersCount >= 2 && len(ptrData) >= 4 {
+			// Float32 pointer — decode with PtrEndian
+			modes := modbus.DecodeAllModes(ptrData)
+			if len(modes) > 0 {
+				f := modes[0].Pick(task.PtrEndian)
+				v := int(f)
+				if f >= 0 && float32(v) == f && v < syncTotal {
+					currentPtr = v
+				}
+			}
+		} else if len(ptrData) >= 2 {
+			// uint16 pointer — big-endian register
+			v := int(binary.BigEndian.Uint16(ptrData[0:2]))
+			if v >= 0 && v < syncTotal {
+				currentPtr = v
+			}
 		}
 		logger.SessionBroadcast(sid, logger.LogMessage{
 			Level:   "DEBUG",
-			Message: fmt.Sprintf("[%s] Ptr leído: %d | TX: %X | RX: %X", task.Key, currentPtr, ptrReq, ptrData),
+			Message: fmt.Sprintf("[%s] → %s:%d addr=%d qty=%d | TX: %X\n  ← ptr=%d | RX: %X", task.Key, task.IP, task.Port, task.PtrAddr, task.DataRegistersCount, ptrReq, currentPtr, ptrData),
 		})
-	} else if ptrErr != nil {
+	} else {
 		logger.SessionBroadcast(sid, logger.LogMessage{
 			Level:   "ERROR",
-			Message: fmt.Sprintf("[%s] Error leyendo ptr addr=%d qty=1 | TX: %X | err: %v", task.Key, task.PtrAddr, ptrReq, ptrErr),
+			Message: fmt.Sprintf("[%s] → %s:%d addr=%d qty=%d ERROR: %v | TX: %X", task.Key, task.IP, task.Port, task.PtrAddr, task.DataRegistersCount, ptrErr, ptrReq),
 		})
 	}
 	if currentPtr < 0 {
@@ -264,7 +313,7 @@ func syncStation(sid string, task syncTask) {
 	// 6. Compute which ptrs to fetch (time-based delta vs full sync)
 	var ptrs []int
 	if hasHistory && len(currentPtrData) > 0 {
-		ptrs = timeDeltaPtrs(lastFecha, lastHora, currentPtr, currentPtrData, task.Endian)
+		ptrs = timeDeltaPtrs(lastFecha, lastHora, currentPtr, currentPtrData, task.DBEndian)
 	} else {
 		ptrs = allPtrs() // no history or can't decode → full sync
 	}
@@ -322,7 +371,7 @@ func syncStation(sid string, task syncTask) {
 			rec.Hex = fmt.Sprintf("%X", data)
 			rec.RawHex = buildRawHex(task.UnitID, modbus.FCReadHoldingRegisters, data)
 			modes := modbus.DecodeAllModes(data)
-			if fecha, hora, _, ok := modbus.DecodeROCDateTime(modes, task.Endian); ok {
+			if fecha, hora, _, ok := modbus.DecodeROCDateTime(modes, task.DBEndian); ok {
 				rec.Fecha = fecha
 				rec.Hora = hora
 			}
@@ -372,7 +421,7 @@ func historyRecords(task syncTask) []modbus.HourRecord {
 		for i := range modes {
 			modes[i].Sanitize()
 		}
-		_, _, ts, _ := modbus.DecodeROCDateTime(modes, task.Endian)
+		_, _, ts, _ := modbus.DecodeROCDateTime(modes, task.DBEndian)
 		out = append(out, modbus.HourRecord{
 			Ptr:   uint16(h.Ptr),
 			Hex:   h.Hex,

@@ -87,14 +87,14 @@ const props = defineProps({
 
 // ── Signal defaults (modes[2..9] — first two floats are date/time) ────────────
 const DEFAULTS = [
-  { name: 'Flow Min',       color: '#7AD400' },
-  { name: 'Raw Pulses',     color: '#0ea5e9' },
-  { name: 'Pf PSI',         color: '#f59e0b' },
-  { name: 'Tf DEG F',       color: '#ec4899' },
-  { name: 'Multiplier',     color: '#8b5cf6' },
-  { name: 'Uncorr Vol MCF', color: '#14b8a6' },
-  { name: 'Vol Accum MCF',  color: '#f97316' },
-  { name: 'Energy MMBTU',   color: '#007934' },
+  { name: 'Caudal Mín',        color: '#7AD400' },
+  { name: 'Pulsos Crudos',     color: '#0ea5e9' },
+  { name: 'Presión Flujo',     color: '#f59e0b' },
+  { name: 'Temperatura Flujo', color: '#ec4899' },
+  { name: 'Multiplicador',     color: '#8b5cf6' },
+  { name: 'Vol. No Corr. MCF', color: '#14b8a6' },
+  { name: 'Vol. Acum. MCF',    color: '#f97316' },
+  { name: 'Energía MMBTU',     color: '#007934' },
 ]
 // SIGNAL_OFFSET: skip modes[0] (date float) and modes[1] (time float)
 const SIGNAL_OFFSET = 2
