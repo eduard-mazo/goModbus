@@ -70,15 +70,16 @@ type SyncRequest struct {
 }
 
 type syncTask struct {
-	Key      string // "STATION" or "STATION / M1"
-	Station  string
-	IP       string
-	Port     int
-	UnitID   byte
-	PtrEndian modbus.Endianness // endian used to decode the pointer register (always float32)
-	DBEndian  modbus.Endianness // endian used to decode historical data
-	PtrAddr  uint16
-	DBAddr   uint16
+	Key                string // "STATION" or "STATION / M1"
+	Station            string
+	IP                 string
+	Port               int
+	UnitID             byte
+	PtrEndian          modbus.Endianness // endian used to decode the pointer register
+	DBEndian           modbus.Endianness // endian used to decode historical data
+	PtrAddr            uint16
+	DBAddr             uint16
+	DataRegistersCount uint16 // qty for pointer read: 1=uint16 (LLANOS), 2=float32 (rest)
 }
 
 func expandTasks(stations []config.StationConfig) []syncTask {
@@ -86,6 +87,10 @@ func expandTasks(stations []config.StationConfig) []syncTask {
 	for _, s := range stations {
 		stPtrEndian := s.PtrEndian
 		stDBEndian := s.DBEndian
+		drc := s.DataRegistersCount
+		if drc == 0 {
+			drc = 1
+		}
 
 		if len(s.Medidores) > 0 {
 			for _, m := range s.Medidores {
@@ -98,24 +103,26 @@ func expandTasks(stations []config.StationConfig) []syncTask {
 					dbEndian = m.DBEndian
 				}
 				tasks = append(tasks, syncTask{
-					Key:       fmt.Sprintf("%s / %s", s.Name, m.Name),
-					Station:   s.Name,
-					IP:        s.IP, Port: s.Port, UnitID: s.ID,
-					PtrEndian: ptrEndian,
-					DBEndian:  dbEndian,
-					PtrAddr:   m.PointerAddress,
-					DBAddr:    m.DBAddress,
+					Key:                fmt.Sprintf("%s / %s", s.Name, m.Name),
+					Station:            s.Name,
+					IP:                 s.IP, Port: s.Port, UnitID: s.ID,
+					PtrEndian:          ptrEndian,
+					DBEndian:           dbEndian,
+					PtrAddr:            m.PointerAddress,
+					DBAddr:             m.DBAddress,
+					DataRegistersCount: drc,
 				})
 			}
 		} else {
 			tasks = append(tasks, syncTask{
-				Key:       s.Name,
-				Station:   s.Name,
-				IP:        s.IP, Port: s.Port, UnitID: s.ID,
-				PtrEndian: stPtrEndian,
-				DBEndian:  stDBEndian,
-				PtrAddr:   s.PointerAddress,
-				DBAddr:    s.DBAddress,
+				Key:                s.Name,
+				Station:            s.Name,
+				IP:                 s.IP, Port: s.Port, UnitID: s.ID,
+				PtrEndian:          stPtrEndian,
+				DBEndian:           stDBEndian,
+				PtrAddr:            s.PointerAddress,
+				DBAddr:             s.DBAddress,
+				DataRegistersCount: drc,
 			})
 		}
 	}
@@ -230,26 +237,34 @@ func syncStation(sid string, task syncTask) {
 	}
 	defer client.Close()
 
-	// 4. Read current pointer — always float32 (2 registers), decoded with PtrEndian.
+	// 4. Read current pointer using DataRegistersCount registers:
+	//    qty=1 → uint16 big-endian (LLANOS), qty=2 → float32 with PtrEndian (rest).
 	currentPtr := -1
-	ptrData, ptrReq, _, ptrErr := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, 2, nil)
+	ptrData, ptrReq, _, ptrErr := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, task.DataRegistersCount, nil)
 	if ptrErr == nil {
-		modes := modbus.DecodeAllModes(ptrData)
-		if len(modes) > 0 {
-			f := modes[0].Pick(task.PtrEndian)
-			v := int(f)
-			if f >= 0 && float32(v) == f && v < syncTotal {
+		if task.DataRegistersCount >= 2 && len(ptrData) >= 4 {
+			modes := modbus.DecodeAllModes(ptrData)
+			if len(modes) > 0 {
+				f := modes[0].Pick(task.PtrEndian)
+				v := int(f)
+				if f >= 0 && float32(v) == f && v < syncTotal {
+					currentPtr = v
+				}
+			}
+		} else if len(ptrData) >= 2 {
+			v := int(binary.BigEndian.Uint16(ptrData[0:2]))
+			if v >= 0 && v < syncTotal {
 				currentPtr = v
 			}
 		}
 		logger.SessionBroadcast(sid, logger.LogMessage{
 			Level:   "DEBUG",
-			Message: fmt.Sprintf("[%s] → %s:%d addr=%d qty=2 | TX: %X\n  ← ptr=%d | RX: %X", task.Key, task.IP, task.Port, task.PtrAddr, ptrReq, currentPtr, ptrData),
+			Message: fmt.Sprintf("[%s] → %s:%d addr=%d qty=%d | TX: %X\n  ← ptr=%d | RX: %X", task.Key, task.IP, task.Port, task.PtrAddr, task.DataRegistersCount, ptrReq, currentPtr, ptrData),
 		})
 	} else {
 		logger.SessionBroadcast(sid, logger.LogMessage{
 			Level:   "ERROR",
-			Message: fmt.Sprintf("[%s] → %s:%d addr=%d qty=2 ERROR: %v | TX: %X", task.Key, task.IP, task.Port, task.PtrAddr, ptrErr, ptrReq),
+			Message: fmt.Sprintf("[%s] → %s:%d addr=%d qty=%d ERROR: %v | TX: %X", task.Key, task.IP, task.Port, task.PtrAddr, task.DataRegistersCount, ptrErr, ptrReq),
 		})
 	}
 	if currentPtr < 0 {
