@@ -14,16 +14,16 @@ export const useSyncStore = defineStore('sync', () => {
   function handleProgress(prog) {
     if (prog.station === '__done__') {
       loading.value = false
-      const first = Object.keys(stationResults.value)[0]
-      if (first) selectedIdx.value = first
+      loadFromDB([])  // reload all fresh data from DB after sync completes
       return
     }
     if (!stationsExpected.value.includes(prog.station)) {
       stationsExpected.value = [...stationsExpected.value, prog.station]
     }
     progress.value = { ...progress.value, [prog.station]: prog }
-    if (prog.pct === 100 && prog.records && prog.records.length > 0) {
-      stationResults.value = { ...stationResults.value, [prog.station]: prog.records }
+    if (prog.pct === 100) {
+      // Always populate results (even if 0 records) so tab appears
+      stationResults.value = { ...stationResults.value, [prog.station]: prog.records || [] }
       if (!selectedIdx.value) selectedIdx.value = prog.station
     }
   }

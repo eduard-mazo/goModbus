@@ -48,20 +48,10 @@
           <svg v-else class="animate-spin" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/></svg>
           {{ sync.loading ? 'Sincronizando…' : `Sincronizar (${sync.selectedNames.length})` }}
         </button>
-        <button class="btn btn-ghost btn-sm" :disabled="sync.loading"
-                title="Cargar datos almacenados sin conectar al equipo"
-                @click="loadFromDB">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Ver BD
-        </button>
         <button class="btn btn-ghost btn-sm" @click="sync.selectedNames = stations.map(s => s.name)">Todas</button>
         <button class="btn btn-ghost btn-sm" @click="sync.selectedNames = []">Ninguna</button>
         <span v-if="sync.loading" class="text-xs text-g-400 ml-1">
           {{ completedCount }}/{{ sync.stationsExpected.length }} tareas completadas
-        </span>
-        <span v-if="dbLoadMsg" class="text-xs ml-1"
-              :class="dbLoadMsg.ok ? 'text-forest' : 'text-g-400'">
-          {{ dbLoadMsg.text }}
         </span>
       </div>
     </div>
@@ -190,7 +180,7 @@
       <div v-else-if="!sync.loading" class="flex-1 flex items-center justify-center">
         <div class="text-center space-y-2">
           <svg class="mx-auto text-g-300" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
-          <p class="text-g-400 text-sm">Sincroniza para obtener datos frescos, o usa <strong>Ver BD</strong> para cargar el historial almacenado</p>
+          <p class="text-g-400 text-sm">Sin historial almacenado. Sincroniza para obtener datos del equipo.</p>
         </div>
       </div>
 
@@ -210,7 +200,6 @@ const sync      = useSyncStore()
 const rocStore  = useRocStore()
 const sessionId = useSessionId()
 const stations  = ref([])
-const dbLoadMsg = ref(null)
 
 // Signal names for display (start at modes index 2 — indices 0,1 are fecha/hora floats)
 const DEFAULT_SIG = [
@@ -277,14 +266,8 @@ async function startSync() {
   await sync.startFullSync(sessionId)
 }
 
-async function loadFromDB() {
-  dbLoadMsg.value = null
-  const found = await sync.loadFromDB(sync.selectedNames)
-  dbLoadMsg.value = found
-    ? { ok: true, text: 'Historial cargado desde BD' }
-    : { ok: false, text: 'Sin datos en BD para la selección' }
-  setTimeout(() => { dbLoadMsg.value = null }, 3000)
-}
-
-onMounted(loadStations)
+onMounted(async () => {
+  await loadStations()
+  await sync.loadFromDB([])
+})
 </script>

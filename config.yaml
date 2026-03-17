@@ -3,7 +3,8 @@ stations:
     ip: "10.155.150.201"
     port: 502
     id: 10
-    endian: "cdab"
+    ptr_endian: "cdab"
+    db_endian: "cdab"
     data_type: "float32"
     data_registers_count: 2
     signal_names:
@@ -30,7 +31,8 @@ stations:
     ip: "10.50.184.208"
     port: 502
     id: 2
-    endian: "dcba"
+    ptr_endian: "dcba"   # puntero: float32 DCBA
+    db_endian: "abcd"    # registros históricos: ABCD (big-endian estándar)
     data_type: "float32"
     pointer_address: 10000
     base_data_address: 700
@@ -49,7 +51,8 @@ stations:
     ip: "10.156.168.116"
     port: 502
     id: 1
-    endian: "cdab"
+    ptr_endian: "cdab"
+    db_endian: "cdab"
     data_type: "float32"
     pointer_address: 10000
     base_data_address: 700
@@ -68,7 +71,8 @@ stations:
     ip: "10.155.115.46"
     port: 502
     id: 1
-    endian: "cdab"
+    ptr_endian: "cdab"
+    db_endian: "cdab"
     data_type: "float32"
     pointer_address: 10000
     base_data_address: 700
@@ -87,7 +91,8 @@ stations:
     ip: "10.155.249.194"
     port: 502
     id: 1
-    endian: "cdab"
+    ptr_endian: "cdab"
+    db_endian: "cdab"
     data_type: "float32"
     pointer_address: 10000
     base_data_address: 700
@@ -106,9 +111,9 @@ stations:
     ip: "10.14.224.5"
     port: 502
     id: 1
-    endian: "cdab"
+    ptr_endian: "cdab"
+    db_endian: "cdab"
     data_type: "float32"
-    pointer_address: 10000
     data_registers_count: 2
     signal_names:
       - "Caudal Mín"
@@ -141,7 +146,8 @@ stations:
     ip: "10.14.201.3"
     port: 502
     id: 1
-    endian: "cdab"
+    ptr_endian: "cdab"
+    db_endian: "cdab"
     data_type: "float32"
     pointer_address: 10000
     base_data_address: 700
@@ -160,7 +166,8 @@ stations:
     ip: "10.156.148.8"
     port: 502
     id: 1
-    endian: "cdab"
+    ptr_endian: "cdab"
+    db_endian: "cdab"
     data_type: "float32"
     pointer_address: 10000
     base_data_address: 700
@@ -179,7 +186,8 @@ stations:
     ip: "10.155.249.193"
     port: 502
     id: 1
-    endian: "cdab"
+    ptr_endian: "cdab"
+    db_endian: "cdab"
     data_type: "float32"
     pointer_address: 10000
     base_data_address: 700
