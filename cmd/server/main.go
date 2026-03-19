@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -19,6 +20,20 @@ import (
 	"goModbus/internal/logger"
 	"goModbus/internal/modbus"
 )
+
+// tlsFilter silencia los errores de TLS handshake que el servidor HTTP
+// imprime cuando un cliente no acepta el certificado auto-firmado.
+type tlsFilter struct{}
+
+func (tlsFilter) Write(b []byte) (int, error) {
+	s := string(b)
+	if strings.Contains(s, "TLS handshake error") ||
+		strings.Contains(s, "HTTP request to an HTTPS server") {
+		return len(b), nil
+	}
+	os.Stderr.Write(b)
+	return len(b), nil
+}
 
 func main() {
 	defer logger.CloseLogger()
@@ -132,16 +147,34 @@ func main() {
 	fmt.Println("  HTTPS: https://localhost:8080")
 	fmt.Println("  HTTPS: https://localhost:8083")
 
-	// Serve HTTPS on both ports with the same certificate.
-	// :8080 is the primary port; :8083 is an alias so that users on either port get TLS.
+	// Scheduler: auto-sync de todas las estaciones cada hora en el minuto 5.
 	go func() {
-		srv := &http.Server{Addr: ":8083", Handler: r}
+		for {
+			now := time.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 5, 0, 0, now.Location())
+			if !next.After(now) {
+				next = next.Add(time.Hour)
+			}
+			time.Sleep(time.Until(next))
+			logger.BroadcastLog("INFO",
+				fmt.Sprintf("Auto-sync programado — %s", time.Now().Format("15:04")),
+				nil, 0, nil, "")
+			handlers.RunAutoSync()
+		}
+	}()
+
+	errLog := log.New(tlsFilter{}, "", 0)
+
+	// Serve HTTPS on both ports with the same certificate.
+	go func() {
+		srv := &http.Server{Addr: ":8083", Handler: r, ErrorLog: errLog}
 		if err := srv.ListenAndServeTLS("certs/cert.pem", "certs/key.pem"); err != nil {
 			fmt.Println("WARN :8083 TLS:", err)
 		}
 	}()
 
-	if err := r.RunTLS(":8080", "certs/cert.pem", "certs/key.pem"); err != nil {
+	srv := &http.Server{Addr: ":8080", Handler: r, ErrorLog: errLog}
+	if err := srv.ListenAndServeTLS("certs/cert.pem", "certs/key.pem"); err != nil {
 		fmt.Println("ERROR TLS :8080:", err)
 	}
 }

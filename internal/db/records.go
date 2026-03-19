@@ -6,11 +6,12 @@ import "database/sql"
 // Used for delta-sync tracking (primary key: task_key + ptr).
 type StationRecord struct {
 	Ptr    int
-	Fecha  string // "YYYY-MM-DD" decoded from float Modes[0]
-	Hora   string // "HH:MM"      decoded from float Modes[1]
-	Hex    string // data payload bytes as hex
-	RawHex string // full Modbus ADU as hex
+	Fecha  string     // "YYYY-MM-DD" decoded from float Modes[0]
+	Hora   string     // "HH:MM"      decoded from float Modes[1]
+	Hex    string     // data payload bytes as hex
+	RawHex string     // full Modbus ADU as hex
 	Valid  bool
+	Datos  [10]float64 // float32 values decoded with DBEndian: [0]=fecha_f,[1]=hora_f,[2..9]=señales
 }
 
 // HistoryRecord is one entry in the long-term history table.
@@ -21,6 +22,7 @@ type HistoryRecord struct {
 	Hora   string
 	Hex    string
 	RawHex string
+	Datos  [10]float64
 }
 
 // TaskMeta stores the circular-buffer reference point recorded at sync time.
@@ -98,7 +100,11 @@ func UpsertRecords(database *sql.DB, taskKey string, records []StationRecord) er
 // GetHistory returns all history records for taskKey ordered chronologically.
 func GetHistory(database *sql.DB, taskKey string) ([]HistoryRecord, error) {
 	rows, err := database.Query(
-		`SELECT ptr, fecha, hora, hex, COALESCE(raw_hex,'')
+		`SELECT ptr, fecha, hora, hex, COALESCE(raw_hex,''),
+		        COALESCE(dato1,0), COALESCE(dato2,0), COALESCE(dato3,0),
+		        COALESCE(dato4,0), COALESCE(dato5,0), COALESCE(dato6,0),
+		        COALESCE(dato7,0), COALESCE(dato8,0), COALESCE(dato9,0),
+		        COALESCE(dato10,0)
 		 FROM station_history WHERE task_key = ?
 		 ORDER BY fecha ASC, hora ASC`, taskKey,
 	)
@@ -109,7 +115,11 @@ func GetHistory(database *sql.DB, taskKey string) ([]HistoryRecord, error) {
 	var out []HistoryRecord
 	for rows.Next() {
 		var r HistoryRecord
-		if err := rows.Scan(&r.Ptr, &r.Fecha, &r.Hora, &r.Hex, &r.RawHex); err != nil {
+		if err := rows.Scan(
+			&r.Ptr, &r.Fecha, &r.Hora, &r.Hex, &r.RawHex,
+			&r.Datos[0], &r.Datos[1], &r.Datos[2], &r.Datos[3], &r.Datos[4],
+			&r.Datos[5], &r.Datos[6], &r.Datos[7], &r.Datos[8], &r.Datos[9],
+		); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -128,12 +138,21 @@ func UpsertHistory(database *sql.DB, taskKey string, records []StationRecord) er
 		return err
 	}
 	stmt, err := tx.Prepare(`
-		INSERT INTO station_history (task_key, ptr, fecha, hora, hex, raw_hex, valid, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+		INSERT INTO station_history
+			(task_key, ptr, fecha, hora, hex, raw_hex,
+			 dato1, dato2, dato3, dato4, dato5,
+			 dato6, dato7, dato8, dato9, dato10,
+			 valid, synced_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
 		ON CONFLICT(task_key, fecha, hora) DO UPDATE SET
 			ptr       = excluded.ptr,
 			hex       = excluded.hex,
 			raw_hex   = excluded.raw_hex,
+			dato1     = excluded.dato1,  dato2  = excluded.dato2,
+			dato3     = excluded.dato3,  dato4  = excluded.dato4,
+			dato5     = excluded.dato5,  dato6  = excluded.dato6,
+			dato7     = excluded.dato7,  dato8  = excluded.dato8,
+			dato9     = excluded.dato9,  dato10 = excluded.dato10,
 			synced_at = CURRENT_TIMESTAMP`)
 	if err != nil {
 		tx.Rollback()
@@ -148,7 +167,11 @@ func UpsertHistory(database *sql.DB, taskKey string, records []StationRecord) er
 		if rawHex == "" {
 			rawHex = r.Hex
 		}
-		if _, err := stmt.Exec(taskKey, r.Ptr, r.Fecha, r.Hora, r.Hex, rawHex); err != nil {
+		if _, err := stmt.Exec(
+			taskKey, r.Ptr, r.Fecha, r.Hora, r.Hex, rawHex,
+			r.Datos[0], r.Datos[1], r.Datos[2], r.Datos[3], r.Datos[4],
+			r.Datos[5], r.Datos[6], r.Datos[7], r.Datos[8], r.Datos[9],
+		); err != nil {
 			tx.Rollback()
 			return err
 		}

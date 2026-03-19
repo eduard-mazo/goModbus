@@ -349,6 +349,9 @@ func syncStation(sid string, task syncTask) {
 				rec.Fecha = fecha
 				rec.Hora = hora
 			}
+			for i := 0; i < 10 && i < len(modes); i++ {
+				rec.Datos[i] = float64(modes[i].Pick(task.DBEndian))
+			}
 		}
 		fresh[p] = rec
 
@@ -581,4 +584,45 @@ func LoadFromDBHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// ─── Auto-sync (llamado desde el scheduler horario en main.go) ───────────────
+
+// RunAutoSync ejecuta un full-sync de todas las estaciones del config.
+// Usa sid="" → los mensajes se emiten como BroadcastLog a todos los clientes.
+func RunAutoSync() {
+	cfg, err := config.LoadConfig(config.ConfigPath)
+	if err != nil {
+		logger.BroadcastLog("ERROR", "Auto-sync: error cargando config: "+err.Error(), nil, 0, nil, "")
+		return
+	}
+	tasks := expandTasks(cfg.Stations)
+	if len(tasks) == 0 {
+		return
+	}
+
+	logger.BroadcastLog("INFO", fmt.Sprintf("Auto-sync iniciado — %d tarea(s)", len(tasks)), nil, 0, nil, "")
+
+	ipSems := make(map[string]chan struct{})
+	for _, t := range tasks {
+		if _, ok := ipSems[t.IP]; !ok {
+			ipSems[t.IP] = make(chan struct{}, 2)
+		}
+	}
+
+	var wg sync.WaitGroup
+	for _, t := range tasks {
+		t := t
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem := ipSems[t.IP]
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			syncStation("", t)
+		}()
+	}
+	wg.Wait()
+
+	logger.BroadcastLog("INFO", fmt.Sprintf("Auto-sync completado — %d tarea(s)", len(tasks)), nil, 0, nil, "")
 }

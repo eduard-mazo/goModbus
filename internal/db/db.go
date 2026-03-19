@@ -7,6 +7,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+
 // Open opens (or creates) the SQLite database at path and runs migrations.
 func Open(path string) (*sql.DB, error) {
 	database, err := sql.Open("sqlite", path)
@@ -89,6 +90,10 @@ func migrate(db *sql.DB) error {
 	// Additive column migrations (ignore error if column already exists)
 	db.Exec(`ALTER TABLE station_records ADD COLUMN raw_hex TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`ALTER TABLE station_records ADD COLUMN fecha TEXT NOT NULL DEFAULT ''`)
-	db.Exec(`ALTER TABLE station_records ADD COLUMN hora TEXT NOT NULL DEFAULT ''`)
+	db.Exec(`ALTER TABLE station_records ADD COLUMN hora  TEXT NOT NULL DEFAULT ''`)
+	// station_history: numeric signal columns dato1..dato10
+	for i := 1; i <= 10; i++ {
+		db.Exec(fmt.Sprintf(`ALTER TABLE station_history ADD COLUMN dato%d REAL NOT NULL DEFAULT 0`, i))
+	}
 	return nil
 }
