@@ -127,13 +127,13 @@ func main() {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", indexData)
 	})
 
-	logger.BroadcastLog("INFO", "ROC Modbus Expert v4.0 | EPM | https://localhost:8443", nil, 0, nil, "")
+	logger.BroadcastLog("INFO", "ROC Modbus Expert v4.0 | EPM | https://localhost:8080", nil, 0, nil, "")
 	fmt.Println("ROC Modbus Expert v4.0 | EPM")
-	fmt.Println("  HTTPS: https://localhost:8443")
+	fmt.Println("  HTTPS: https://localhost:8080")
 	fmt.Println("  HTTPS: https://localhost:8083")
 
 	// Serve HTTPS on both ports with the same certificate.
-	// :8443 is the primary port; :8083 is an alias so that users on either port get TLS.
+	// :8080 is the primary port; :8083 is an alias so that users on either port get TLS.
 	go func() {
 		srv := &http.Server{Addr: ":8083", Handler: r}
 		if err := srv.ListenAndServeTLS("certs/cert.pem", "certs/key.pem"); err != nil {
@@ -141,7 +141,7 @@ func main() {
 		}
 	}()
 
-	if err := r.RunTLS(":8443", "certs/cert.pem", "certs/key.pem"); err != nil {
-		fmt.Println("ERROR TLS :8443:", err)
+	if err := r.RunTLS(":8080", "certs/cert.pem", "certs/key.pem"); err != nil {
+		fmt.Println("ERROR TLS :8080:", err)
 	}
 }

@@ -11,11 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"goModbus/internal/config"
 	idb "goModbus/internal/db"
 	"goModbus/internal/logger"
 	"goModbus/internal/modbus"
+
+	"github.com/gin-gonic/gin"
 )
 
 // allPtrs returns every circular-buffer index (0..syncTotal-1).
@@ -242,7 +243,7 @@ func syncStation(sid string, task syncTask) {
 	currentPtr := -1
 	ptrData, ptrReq, _, ptrErr := client.Execute(modbus.FCReadHoldingRegisters, task.PtrAddr, task.DataRegistersCount, nil)
 	if ptrErr == nil {
-		if task.DataRegistersCount >= 2 && len(ptrData) >= 4 {
+		if len(ptrData) == 4 {
 			modes := modbus.DecodeAllModes(ptrData)
 			if len(modes) > 0 {
 				f := modes[0].Pick(task.PtrEndian)
@@ -250,11 +251,6 @@ func syncStation(sid string, task syncTask) {
 				if f >= 0 && float32(v) == f && v < syncTotal {
 					currentPtr = v
 				}
-			}
-		} else if len(ptrData) >= 2 {
-			v := int(binary.BigEndian.Uint16(ptrData[0:2]))
-			if v >= 0 && v < syncTotal {
-				currentPtr = v
 			}
 		}
 		logger.SessionBroadcast(sid, logger.LogMessage{
