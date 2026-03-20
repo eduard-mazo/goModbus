@@ -22,7 +22,7 @@ GO := go
 .DEFAULT_GOAL := help
 
 .PHONY: all build build-frontend build-debug run dev dev-frontend dev-backend \
-        emulate test test-v fmt vet check deps deps-upgrade clean clean-logs install help info
+        emulate migrate test test-v fmt vet check deps deps-upgrade clean clean-logs install help info
 
 # ─── Help ─────────────────────────────────────────────────────────────────────
 help: ## Show this help message
@@ -62,6 +62,10 @@ dev-backend: ## Run Go backend with race detector (needs dist/ from dev-frontend
 emulate: ## Run Modbus TCP emulator (serves real DB frames on localhost ports)
 	@printf '\033[33m▶ Emulador Modbus\033[0m  DB=correcciones/modbus.db\n'
 	$(GO) run ./cmd/emulator/ -db correcciones/modbus.db -cfg config.yaml
+
+migrate: ## Migrar dato1..dato10 desde hex en station_history (DB=modbus.db por defecto)
+	@printf '\033[33m▶ Migrando\033[0m $(or $(DB),modbus.db)\n'
+	$(GO) run ./cmd/migrate/ -db $(or $(DB),modbus.db) -cfg config.yaml
 
 run: build ## Build and run the server
 	@printf '\033[32m▶ Starting\033[0m https://localhost:8443\n'
