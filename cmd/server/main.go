@@ -21,8 +21,9 @@ import (
 	"goModbus/internal/modbus"
 )
 
-// tlsFilter silencia los errores de TLS handshake que el servidor HTTP
-// imprime cuando un cliente no acepta el certificado auto-firmado.
+// tlsFilter silencia los errores de TLS handshake del servidor HTTPS.
+// "tls: unknown certificate" ocurre cuando el cliente no ha instalado el cert;
+// no es un error del servidor, es el comportamiento esperado de TLS auto-firmado.
 type tlsFilter struct{}
 
 func (tlsFilter) Write(b []byte) (int, error) {
@@ -38,8 +39,6 @@ func (tlsFilter) Write(b []byte) (int, error) {
 func main() {
 	defer logger.CloseLogger()
 
-	// Wire modbus log calls into the application logger.
-	// When a session ID (sid) is provided, route only to that client's WebSocket.
 	modbus.LogFunc = func(sid, level, message string, raw []byte, duration time.Duration, pv *float64, dbh string) {
 		if sid != "" {
 			msg := logger.LogMessage{Level: level, Message: message, PointerValue: pv, DataBlockHex: dbh}
@@ -55,15 +54,12 @@ func main() {
 		}
 	}
 
-	// Start WebSocket broadcaster goroutine
 	logger.StartBroadcaster()
 
-	// Ensure TLS certificates exist (auto-generated on first run)
 	if err := certgen.EnsureCerts("certs"); err != nil {
 		fmt.Println("WARN: no se pudo generar certificado TLS:", err)
 	}
 
-	// Open SQLite database
 	database, err := db.Open("modbus.db")
 	if err != nil {
 		fmt.Println("WARN: no se pudo abrir base de datos:", err)
@@ -76,7 +72,19 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery(), cors.Default())
 
-	// Serve frontend: try local disk first (dev mode), then embedded dist/
+	// /cert — descarga el certificado TLS para instalación en el navegador/SO.
+	// Una vez instalado, https://host:8443 no muestra advertencias.
+	r.GET("/cert", func(c *gin.Context) {
+		certPath := "certs/cert.pem"
+		if _, err := os.Stat(certPath); err != nil {
+			c.String(http.StatusNotFound, "certificado no generado aún")
+			return
+		}
+		c.Header("Content-Disposition", `attachment; filename="roc-modbus-ca.pem"`)
+		c.File(certPath)
+	})
+
+	// Frontend SPA
 	r.GET("/", func(c *gin.Context) {
 		if data, err := os.ReadFile("frontend/dist/index.html"); err == nil {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
@@ -86,13 +94,11 @@ func main() {
 		http.FileServer(http.FS(sub)).ServeHTTP(c.Writer, c.Request)
 	})
 
-	// Serve Vite assets (JS, CSS, etc.)
 	r.GET("/assets/*filepath", func(c *gin.Context) {
 		sub, _ := fs.Sub(web.DistFS, "dist")
 		http.StripPrefix("/", http.FileServer(http.FS(sub))).ServeHTTP(c.Writer, c.Request)
 	})
 
-	// Serve static files (fonts, shared CSS): disk-first for dev
 	r.GET("/static/*filepath", func(c *gin.Context) {
 		path := c.Param("filepath")
 		localPath := "static" + path
@@ -106,18 +112,14 @@ func main() {
 
 	api.RegisterRoutes(r)
 
-	// SPA fallback: for any unmatched path, first try to serve it as a dist/ file
-	// (covers /favicon.svg, /favicon.ico, etc.), then fall back to index.html.
 	distSub, _ := fs.Sub(web.DistFS, "dist")
 	distFS := http.FS(distSub)
 	r.NoRoute(func(c *gin.Context) {
 		p := c.Request.URL.Path
-		// API and WS paths get a plain 404.
 		if strings.HasPrefix(p, "/api") || strings.HasPrefix(p, "/ws") {
 			c.Status(http.StatusNotFound)
 			return
 		}
-		// Try local disk first (dev mode), then embedded dist/
 		rel := strings.TrimPrefix(p, "/")
 		localFile := "frontend/dist/" + rel
 		if _, err := os.Stat(localFile); err == nil {
@@ -129,7 +131,6 @@ func main() {
 			http.FileServer(distFS).ServeHTTP(c.Writer, c.Request)
 			return
 		}
-		// Serve index.html for SPA routes (e.g. /roc, /query)
 		if data, err := os.ReadFile("frontend/dist/index.html"); err == nil {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 			return
@@ -141,11 +142,6 @@ func main() {
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", indexData)
 	})
-
-	logger.BroadcastLog("INFO", "ROC Modbus Expert v4.0 | EPM | https://localhost:8080", nil, 0, nil, "")
-	fmt.Println("ROC Modbus Expert v4.0 | EPM")
-	fmt.Println("  HTTPS: https://localhost:8080")
-	fmt.Println("  HTTPS: https://localhost:8083")
 
 	// Scheduler: auto-sync de todas las estaciones cada hora en el minuto 5.
 	go func() {
@@ -163,18 +159,23 @@ func main() {
 		}
 	}()
 
+	// :8443 — HTTPS con certificado auto-firmado (instalar cert para evitar advertencias)
 	errLog := log.New(tlsFilter{}, "", 0)
-
-	// Serve HTTPS on both ports with the same certificate.
 	go func() {
-		srv := &http.Server{Addr: ":8083", Handler: r, ErrorLog: errLog}
+		srv := &http.Server{Addr: ":8443", Handler: r, ErrorLog: errLog}
 		if err := srv.ListenAndServeTLS("certs/cert.pem", "certs/key.pem"); err != nil {
-			fmt.Println("WARN :8083 TLS:", err)
+			fmt.Println("WARN :8443 TLS:", err)
 		}
 	}()
 
-	srv := &http.Server{Addr: ":8080", Handler: r, ErrorLog: errLog}
-	if err := srv.ListenAndServeTLS("certs/cert.pem", "certs/key.pem"); err != nil {
-		fmt.Println("ERROR TLS :8080:", err)
+	// :8080 — HTTP plano (acceso sin certificado, sin advertencias del navegador)
+	logger.BroadcastLog("INFO", "ROC Modbus Expert v4.0 | EPM | http://localhost:8080", nil, 0, nil, "")
+	fmt.Println("ROC Modbus Expert v4.0 | EPM")
+	fmt.Println("  HTTP : http://localhost:8080   ← acceso directo, sin advertencias")
+	fmt.Println("  HTTPS: https://localhost:8443  ← instalar /cert para eliminar advertencia")
+	fmt.Println("  Cert : http://localhost:8080/cert  ← descargar e instalar en el navegador/SO")
+
+	if err := http.ListenAndServe(":8080", r); err != nil {
+		fmt.Println("ERROR HTTP :8080:", err)
 	}
 }
