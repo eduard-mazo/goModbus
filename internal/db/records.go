@@ -2,36 +2,6 @@ package db
 
 import "database/sql"
 
-// StationRecord is one ROC circular-buffer record cached in SQLite.
-// Used for delta-sync tracking (primary key: task_key + ptr).
-type StationRecord struct {
-	Ptr    int
-	Fecha  string     // "YYYY-MM-DD" decoded from float Modes[0]
-	Hora   string     // "HH:MM"      decoded from float Modes[1]
-	Hex    string     // data payload bytes as hex
-	RawHex string     // full Modbus ADU as hex
-	Valid  bool
-	Datos  [10]float64 // float32 values decoded with DBEndian: [0]=fecha_f,[1]=hora_f,[2..9]=señales
-}
-
-// HistoryRecord is one entry in the long-term history table.
-// Primary key: (task_key, fecha, hora) — allows storing data beyond 840 slots.
-type HistoryRecord struct {
-	Ptr    int
-	Fecha  string
-	Hora   string
-	Hex    string
-	RawHex string
-	Datos  [10]float64
-}
-
-// TaskMeta stores the circular-buffer reference point recorded at sync time.
-type TaskMeta struct {
-	TaskKey string
-	RefPtr  int
-	RefTime int64 // unix seconds
-}
-
 // ─── station_records (delta tracking, 840-slot circular-buffer mirror) ────────
 
 // GetTaskRecords returns all cached records for taskKey keyed by ptr (0-839).
@@ -142,8 +112,8 @@ func UpsertHistory(database *sql.DB, taskKey string, records []StationRecord) er
 			(task_key, ptr, fecha, hora, hex, raw_hex,
 			 dato1, dato2, dato3, dato4, dato5,
 			 dato6, dato7, dato8, dato9, dato10,
-			 valid, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+			 synced_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(task_key, fecha, hora) DO UPDATE SET
 			ptr       = excluded.ptr,
 			hex       = excluded.hex,
