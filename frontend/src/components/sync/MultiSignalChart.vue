@@ -3,32 +3,33 @@
 
     <!-- ── Signal pills: toggle + rename ─────────────────────────────────── -->
     <div class="flex flex-wrap gap-1.5 items-center pb-2 border-b border-g-100">
-      <div
-        v-for="(sig, i) in signals" :key="i"
-        v-if="sig.active"
-        class="flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs cursor-pointer select-none transition-all"
-        :class="sig.visible ? 'border-g-300 bg-white shadow-sm' : 'border-g-100 bg-g-50 opacity-40'"
-        @click="toggleSignal(i)"
-      >
-        <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="`background:${sig.color}`" />
-        <span
-          v-if="!sig.editing"
-          class="font-medium text-g-700 whitespace-nowrap"
-          title="Doble clic para renombrar"
-          @dblclick.stop="startEdit(i)"
-        >{{ sig.name }}</span>
-        <input
-          v-else
-          :ref="el => { if (el) _nameEl[i] = el }"
-          class="border border-lime rounded outline-none text-g-700 font-medium px-1"
-          style="width:88px; font-size:11px;"
-          v-model="sig.name"
-          @blur="finishEdit(i)"
-          @keydown.enter="finishEdit(i)"
-          @keydown.esc.stop="cancelEdit(i)"
-          @click.stop
-        />
-      </div>
+      <template v-for="(sig, i) in signals" :key="i">
+        <div
+          v-if="sig && sig.active"
+          class="flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs cursor-pointer select-none transition-all"
+          :class="sig.visible ? 'border-g-300 bg-white shadow-sm' : 'border-g-100 bg-g-50 opacity-40'"
+          @click="toggleSignal(i)"
+        >
+          <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="`background:${sig.color}`" />
+          <span
+            v-if="!sig.editing"
+            class="font-medium text-g-700 whitespace-nowrap"
+            title="Doble clic para renombrar"
+            @dblclick.stop="startEdit(i)"
+          >{{ sig.name }}</span>
+          <input
+            v-else
+            :ref="el => { if (el) _nameEl[i] = el }"
+            class="border border-lime rounded outline-none text-g-700 font-medium px-1"
+            style="width:88px; font-size:11px;"
+            v-model="sig.name"
+            @blur="finishEdit(i)"
+            @keydown.enter="finishEdit(i)"
+            @keydown.esc.stop="cancelEdit(i)"
+            @click.stop
+          />
+        </div>
+      </template>
 
       <!-- Zoom preset buttons -->
       <div class="ml-auto flex items-center gap-1">
