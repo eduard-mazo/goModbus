@@ -12,6 +12,16 @@ var (
 	configMu   sync.RWMutex
 )
 
+func SaveConfig(f string, cfg *Config) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	d, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(f, d, 0644)
+}
+
 func LoadConfig(f string) (*Config, error) {
 	configMu.RLock()
 	defer configMu.RUnlock()

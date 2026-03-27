@@ -32,6 +32,12 @@
             Sincronización Total
           </button>
         </router-link>
+        <router-link to="/config" custom v-slot="{ navigate, isActive }">
+          <button class="tab" :class="{ active: isActive }" @click="navigate">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+            Configuración
+          </button>
+        </router-link>
 
         <div class="ml-auto flex items-center gap-2 pr-2">
           <span class="text-xs font-mono" :class="logsStore.wsConnected ? 'text-lime' : 'text-red-400'">

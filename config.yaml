@@ -8,14 +8,14 @@ stations:
     data_type: "float32"
     data_registers_count: 2
     signal_names:
-      - "Caudal Mín"
-      - "Pulsos Crudos"
-      - "Presión Flujo"
-      - "Temperatura Flujo"
+      - "Min. Flujo Acum."
+      - "Pulsos Hora"
+      - "Presión Estática"
+      - "Temperatura"
       - "Multiplicador"
       - "Vol. No Corr. MCF"
       - "Vol. Acum. MCF"
-      - "Energía MMBTU"
+      - "Energía Acum. MMBTU"
     # EET TASAJERA tiene 4 medidores distribuidos en dos bloques de puntero
     medidores:
       - label: 1
@@ -38,14 +38,14 @@ stations:
     base_data_address: 700
     data_registers_count: 1
     signal_names:
-      - "Caudal Mín"
-      - "Pulsos Crudos"
-      - "Presión Flujo"
-      - "Temperatura Flujo"
+      - "Min. Flujo Acum."
+      - "Pulsos Hora"
+      - "Presión Estática"
+      - "Temperatura"
       - "Multiplicador"
       - "Vol. No Corr. MCF"
-      - "Vol. Acum. MCF"
-      - "Energía MMBTU"
+      - "Tasa de Flujo"
+      - "Tasa de Energía"
 
   - name: "YOLOMBO"
     ip: "10.156.168.116"
@@ -58,14 +58,14 @@ stations:
     base_data_address: 700
     data_registers_count: 2
     signal_names:
-      - "Caudal Mín"
-      - "Pulsos Crudos"
-      - "Presión Flujo"
-      - "Temperatura Flujo"
+      - "Min. Flujo Acum."
+      - "Pulsos Hora"
+      - "Presión Estática"
+      - "Temperatura"
       - "Multiplicador"
       - "Vol. No Corr. MCF"
       - "Vol. Acum. MCF"
-      - "Energía MMBTU"
+      - "Energía Acum. MMBTU"
 
   - name: "SANTO DOMINGO"
     ip: "10.155.115.46"
@@ -78,14 +78,14 @@ stations:
     base_data_address: 700
     data_registers_count: 2
     signal_names:
-      - "Caudal Mín"
-      - "Pulsos Crudos"
-      - "Presión Flujo"
-      - "Temperatura Flujo"
+      - "Min. Flujo Acum."
+      - "Pulsos Hora"
+      - "Presión Estática"
+      - "Temperatura"
       - "Multiplicador"
       - "Vol. No Corr. MCF"
       - "Vol. Acum. MCF"
-      - "Energía MMBTU"
+      - "Energía Acum. MMBTU"
 
   - name: "SAN VICENTE"
     ip: "10.155.249.194"
@@ -98,14 +98,14 @@ stations:
     base_data_address: 700
     data_registers_count: 2
     signal_names:
-      - "Caudal Mín"
-      - "Pulsos Crudos"
-      - "Presión Flujo"
-      - "Temperatura Flujo"
+      - "Min. Flujo Acum."
+      - "Pulsos Hora"
+      - "Presión Estática"
+      - "Temperatura"
       - "Multiplicador"
       - "Vol. No Corr. MCF"
       - "Vol. Acum. MCF"
-      - "Energía MMBTU"
+      - "Energía Acum. MMBTU"
 
   - name: "PARQUE DE LAS AGUAS"
     ip: "10.14.224.5"
@@ -115,32 +115,59 @@ stations:
     db_endian: "cdab"
     data_type: "float32"
     data_registers_count: 2
-    signal_names:
-      - "Caudal Mín"
-      - "Pulsos Crudos"
-      - "Presión Flujo"
-      - "Temperatura Flujo"
-      - "Multiplicador"
-      - "Vol. No Corr. MCF"
-      - "Vol. Acum. MCF"
-      - "Energía MMBTU"
     medidores:
       - label: 1
         name: "M1"
         pointer_address: 10000
         base_data_address: 700
+        signal_names:
+          - "Multiplicador"
+          - "Vol. No Corr. MCF"
+          - "Vol. Acum. MCF"
+          - "Energía Acum. MMBTU"
+          - ""
+          - ""
+          - ""
+          - ""
       - label: 2
         name: "M2"
         pointer_address: 10000
         base_data_address: 704
+        signal_names:
+          - "Min. Flujo Acum."
+          - "Pulsos Hora"
+          - "Presión Estática"
+          - "Temperatura"
+          - "Multiplicador"
+          - "Vol. No Corr. MCF"
+          - "Vol. Acum. MCF"
+          - "Energía Acum. MMBTU"
       - label: 3
         name: "M3"
         pointer_address: 10001
         base_data_address: 708
+        signal_names:
+          - "Min. Flujo Acum."
+          - "Presión Estática"
+          - "Temperatura"
+          - "Densidad Base"
+          - "Masa Acum."
+          - "Vol. No Corr. MCF"
+          - "Vol. Acum. MCF"
+          - "Energía Acum. MMBTU"
       - label: 4
         name: "M4"
         pointer_address: 10001
         base_data_address: 712
+        signal_names:
+          - "Min. Flujo Acum."
+          - "Pulsos Hora"
+          - "Presión Estática"
+          - "Masa Acum."
+          - "Vol. Acum. MCF"
+          - "Energía Acum. MMBTU"
+          - "k Factor"
+          - "Gravedad Específica"
 
   - name: "NARE"
     ip: "10.14.201.3"
@@ -153,14 +180,14 @@ stations:
     base_data_address: 700
     data_registers_count: 2
     signal_names:
-      - "Caudal Mín"
-      - "Pulsos Crudos"
-      - "Presión Flujo"
-      - "Temperatura Flujo"
+      - "Min. Flujo Acum."
+      - "Pulsos Hora"
+      - "Presión Estática"
+      - "Temperatura"
       - "Multiplicador"
       - "Vol. No Corr. MCF"
       - "Vol. Acum. MCF"
-      - "Energía MMBTU"
+      - "Energía Acum. MMBTU"
 
   - name: "MACEO"
     ip: "10.156.148.8"
@@ -173,14 +200,14 @@ stations:
     base_data_address: 700
     data_registers_count: 2
     signal_names:
-      - "Caudal Mín"
-      - "Pulsos Crudos"
-      - "Presión Flujo"
-      - "Temperatura Flujo"
+      - "Min. Flujo Acum."
+      - "Pulsos Hora"
+      - "Presión Estática"
+      - "Temperatura"
       - "Multiplicador"
       - "Vol. No Corr. MCF"
       - "Vol. Acum. MCF"
-      - "Energía MMBTU"
+      - "Energía Acum. MMBTU"
 
   - name: "FELISA"
     ip: "10.155.249.193"
@@ -193,11 +220,11 @@ stations:
     base_data_address: 700
     data_registers_count: 2
     signal_names:
-      - "Caudal Mín"
-      - "Pulsos Crudos"
-      - "Presión Flujo"
-      - "Temperatura Flujo"
+      - "Min. Flujo Acum."
+      - "Pulsos Hora"
+      - "Presión Estática"
+      - "Temperatura"
       - "Multiplicador"
       - "Vol. No Corr. MCF"
       - "Vol. Acum. MCF"
-      - "Energía MMBTU"
+      - "Energía Acum. MMBTU"

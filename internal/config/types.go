@@ -18,6 +18,7 @@ type MedidorConfig struct {
 	DBAddress      uint16            `yaml:"base_data_address" json:"base_data_address"`
 	PtrEndian      modbus.Endianness `yaml:"ptr_endian"        json:"ptr_endian,omitempty"`
 	DBEndian       modbus.Endianness `yaml:"db_endian"         json:"db_endian,omitempty"`
+	SignalNames    []string          `yaml:"signal_names"      json:"signal_names,omitempty"`
 }
 
 // StationConfig describes a pre-configured ROC device.

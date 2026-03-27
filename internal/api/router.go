@@ -12,6 +12,7 @@ func RegisterRoutes(r *gin.Engine) {
 	api := r.Group("/api")
 	{
 		api.GET("/config", handlers.GetConfigHandler)
+		api.POST("/config/save", handlers.SaveConfigHandler)
 		api.POST("/stations/full-sync", handlers.FullSyncHandler)
 		api.POST("/stations/partial-sync", handlers.PartialSyncHandler)
 		api.POST("/stations/load-db", handlers.LoadFromDBHandler)
