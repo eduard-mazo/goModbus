@@ -145,9 +145,9 @@
                 <tr>
                   <th style="padding:6px 12px; text-align:right; color:#8b949e; font-weight:500; border-right:1px solid #21262d;">Ptr</th>
                   <th style="padding:6px 12px; text-align:left; color:#8b949e; font-weight:500; border-right:1px solid #21262d; min-width:140px;">Fecha / Hora</th>
-                  <th v-for="(name, i) in sigLabels" :key="i"
+                  <th v-for="sig in activeSigs" :key="sig.modeIdx"
                       style="padding:6px 10px; text-align:right; color:#8b949e; font-weight:500; border-right:1px solid #21262d; max-width:110px; overflow:hidden; text-overflow:ellipsis;"
-                      :title="name">{{ name }}</th>
+                      :title="sig.label">{{ sig.label }}</th>
                   <th style="padding:6px 12px; text-align:center; color:#8b949e; font-weight:500;">OK</th>
                 </tr>
               </thead>
@@ -158,11 +158,11 @@
                   <td style="padding:2px 12px; text-align:left; color:#8b949e; border-right:1px solid #1c2128;">
                     {{ rec.fecha }} {{ rec.hora }}
                   </td>
-                  <td v-for="(_, si) in sigLabels" :key="si"
+                  <td v-for="sig in activeSigs" :key="sig.modeIdx"
                       style="padding:2px 10px; text-align:right; border-right:1px solid #1c2128;"
-                      :style="`color:${rec.valid && rec.modes?.[si+2] ? '#7ad400' : '#333'}`">
-                    {{ rec.valid && rec.modes?.[si+2]
-                      ? rec.modes[si+2][rocStore.dbEndian]?.toFixed(4)
+                      :style="`color:${rec.valid && rec.modes?.[sig.modeIdx] ? '#7ad400' : '#333'}`">
+                    {{ rec.valid && rec.modes?.[sig.modeIdx]
+                      ? rec.modes[sig.modeIdx][rocStore.dbEndian]?.toFixed(4)
                       : '—' }}
                   </td>
                   <td style="padding:2px 12px; text-align:center;">
@@ -189,39 +189,46 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
+import { computed, onMounted } from 'vue'
 import { useSyncStore } from '../stores/sync'
 import { useRocStore } from '../stores/roc'
+import { useConfigStore } from '../stores/config'
 import { useSessionId } from '../services/websocket'
 import MultiSignalChart from '../components/sync/MultiSignalChart.vue'
 
-const sync      = useSyncStore()
-const rocStore  = useRocStore()
-const sessionId = useSessionId()
-const stations  = ref([])
+const sync        = useSyncStore()
+const rocStore    = useRocStore()
+const configStore = useConfigStore()
+const sessionId   = useSessionId()
 
-// Signal names for display (start at modes index 2 — indices 0,1 are fecha/hora floats)
+// Default signal labels (fallback when config doesn't specify names)
 const DEFAULT_SIG = [
-  'Caudal Mín', 'Pulsos Crudos', 'Presión Flujo', 'Temperatura Flujo',
-  'Multiplicador', 'Vol. No Corr. MCF', 'Vol. Acum. MCF', 'Energía MMBTU',
+  'Min. Flujo Acum.', 'Pulsos Hora', 'Presión Estática', 'Temperatura',
+  'Multiplicador', 'Vol. No Corr. MCF', 'Vol. Acum. MCF', 'Energía Acum. MMBTU',
 ]
 
 const currentRecords = computed(() =>
   sync.selectedIdx ? sync.stationResults[sync.selectedIdx] : null
 )
 
-const currentStation = computed(() => {
-  if (!sync.selectedIdx) return null
-  const stName = sync.selectedIdx.split(' / ')[0]
-  return stations.value.find(s => s.name === stName) || null
+// Signal names for the current task key — resolved from medidor or station level.
+// Empty string "" means this signal slot is unused for this medidor.
+const currentSignalNames = computed(() =>
+  sync.selectedIdx ? configStore.signalNamesFor(sync.selectedIdx) : []
+)
+
+// Active signals: { label, modeIdx } pairs, skipping empty-string slots.
+// modeIdx = i + 2 because modes[0]=fecha float, modes[1]=hora float, modes[2..9]=signals.
+const activeSigs = computed(() => {
+  const names = currentSignalNames.value
+  return DEFAULT_SIG.map((d, i) => {
+    // If names array provided and this slot is explicitly empty → skip
+    if (names.length && names[i] === '') return null
+    return { label: names[i] || d, modeIdx: i + 2 }
+  }).filter(Boolean)
 })
 
-const currentSignalNames = computed(() => currentStation.value?.signal_names || [])
-
-const sigLabels = computed(() =>
-  DEFAULT_SIG.map((d, i) => currentSignalNames.value[i] || d)
-)
+const stations = computed(() => configStore.stations)
 
 const validCount = computed(() =>
   currentRecords.value?.filter(r => r.valid).length ?? 0
@@ -253,21 +260,14 @@ function stationError(stName) {
   return null
 }
 
-async function loadStations() {
-  try {
-    const { data } = await axios.get('/api/config')
-    stations.value = data.stations || []
-    if (!sync.selectedNames.length)
-      sync.selectedNames = stations.value.map(s => s.name)
-  } catch (_) {}
-}
-
 async function startSync() {
   await sync.startFullSync(sessionId)
 }
 
 onMounted(async () => {
-  await loadStations()
+  if (!configStore.stations.length) await configStore.load()
+  if (!sync.selectedNames.length)
+    sync.selectedNames = configStore.stations.map(s => s.name)
   await sync.loadFromDB([])
 })
 </script>

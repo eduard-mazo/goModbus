@@ -5,6 +5,7 @@
     <div class="flex flex-wrap gap-1.5 items-center pb-2 border-b border-g-100">
       <div
         v-for="(sig, i) in signals" :key="i"
+        v-if="sig.active"
         class="flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs cursor-pointer select-none transition-all"
         :class="sig.visible ? 'border-g-300 bg-white shadow-sm' : 'border-g-100 bg-g-50 opacity-40'"
         @click="toggleSignal(i)"
@@ -87,19 +88,21 @@ const props = defineProps({
 
 // ── Signal defaults (modes[2..9] — first two floats are date/time) ────────────
 const DEFAULTS = [
-  { name: 'Caudal Mín',        color: '#7AD400' },
-  { name: 'Pulsos Crudos',     color: '#0ea5e9' },
-  { name: 'Presión Flujo',     color: '#f59e0b' },
-  { name: 'Temperatura Flujo', color: '#ec4899' },
+  { name: 'Min. Flujo Acum.',  color: '#7AD400' },
+  { name: 'Pulsos Hora',       color: '#0ea5e9' },
+  { name: 'Presión Estática',  color: '#f59e0b' },
+  { name: 'Temperatura',       color: '#ec4899' },
   { name: 'Multiplicador',     color: '#8b5cf6' },
   { name: 'Vol. No Corr. MCF', color: '#14b8a6' },
   { name: 'Vol. Acum. MCF',    color: '#f97316' },
-  { name: 'Energía MMBTU',     color: '#007934' },
+  { name: 'Energía Acum. MMBTU', color: '#007934' },
 ]
 // SIGNAL_OFFSET: skip modes[0] (date float) and modes[1] (time float)
 const SIGNAL_OFFSET = 2
 
-const signals      = ref(DEFAULTS.map(d => ({ ...d, visible: true, editing: false, _bk: '' })))
+// active = signal is used by this station/medidor.
+// A signal is inactive when signalNames is provided and its slot is "".
+const signals = ref(DEFAULTS.map(d => ({ ...d, active: true, visible: true, editing: false, _bk: '' })))
 const chartRef     = ref(null)
 const _nameEl      = {}
 const hoveredRecord = ref(null)
@@ -145,17 +148,21 @@ const lsKey = name => `roc_sig_${name}`
 
 function loadConfig() {
   const raw = props.stationName && localStorage.getItem(lsKey(props.stationName))
+  const namesGiven = props.signalNames?.length > 0
   signals.value = DEFAULTS.map((d, i) => {
-    let name    = props.signalNames?.[i] || d.name
-    let visible = true
-    if (raw) {
+    const cfgName = props.signalNames?.[i]
+    // active = false when signalNames explicitly provides "" (unused slot for this medidor)
+    const active  = !namesGiven || cfgName !== ''
+    let name      = (cfgName && cfgName !== '') ? cfgName : d.name
+    let visible   = active  // inactive signals start hidden
+    if (raw && active) {
       try {
         const s = JSON.parse(raw)[i]
         if (s?.name)                         name    = s.name
         if (typeof s?.visible === 'boolean') visible = s.visible
       } catch (_) {}
     }
-    return { ...d, name, visible, editing: false, _bk: '' }
+    return { ...d, name, active, visible, editing: false, _bk: '' }
   })
 }
 
@@ -197,8 +204,10 @@ function cancelEdit(i) {
 const hasData = computed(() => validRecords.value.length > 0)
 
 // Real values [si][ri] → float | null  (signals start at modeIdx = SIGNAL_OFFSET + si)
+// Inactive signals (empty name slot) return all-null so they produce no chart line.
 const realVals = computed(() =>
   DEFAULTS.map((_, si) => {
+    if (!signals.value[si]?.active) return props.records.map(() => null)
     const modeIdx = SIGNAL_OFFSET + si
     return props.records.map(r => {
       if (!r?.valid || !r.ts || !r.modes?.[modeIdx]) return null
@@ -229,6 +238,7 @@ const normalizedVals = computed(() =>
 const chartData = computed(() => ({
   datasets: DEFAULTS.map((d, si) => ({
     label:            signals.value[si].name,
+    hidden:           !signals.value[si].active,
     data:             normalizedVals.value[si]
                         .map((y, i) => {
                           if (y === null) return null
@@ -277,11 +287,10 @@ const chartOptions = computed(() => ({
         title: (items) => fmtTooltipTitle(items[0]?.parsed?.x ?? 0),
         label: (ctx) => {
           const si = ctx.datasetIndex
-          // Find record by X timestamp
+          if (!signals.value[si]?.active || !signals.value[si]?.visible) return null
           const xMs = ctx.parsed.x
           const ri = props.records.findIndex(r => r.ts && Math.abs(r.ts * 1000 - xMs) < 1800000)
           const v = realVals.value[si]?.[ri >= 0 ? ri : 0]
-          if (!signals.value[si]?.visible) return null
           return `  ${signals.value[si].name}: ${v !== null && v !== undefined ? v.toFixed(4) : '—'}`
         },
         labelColor: (ctx) => ({

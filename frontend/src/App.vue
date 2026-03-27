@@ -60,14 +60,17 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useLogsStore } from './stores/logs'
+import { useConfigStore } from './stores/config'
 import { connectWS } from './services/websocket'
 import AppSidebar from './components/layout/AppSidebar.vue'
 import LogPanel from './components/layout/LogPanel.vue'
 
 const logsStore = useLogsStore()
+const configStore = useConfigStore()
 const logContainerRef = ref(null)
 
 onMounted(() => {
   connectWS(logContainerRef)
+  configStore.load()
 })
 </script>

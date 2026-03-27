@@ -244,6 +244,9 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import axios from 'axios'
+import { useConfigStore } from '../stores/config'
+
+const configStore = useConfigStore()
 
 // ── Inline sub-component: signal names editor ────────────────────────────────
 const SignalNamesEditor = {
@@ -305,6 +308,14 @@ async function load() {
   } catch (_) {}
 }
 
+// Also update cfg when the shared store refreshes (e.g. if opened while already cached)
+watch(() => configStore.stations, () => {
+  if (!cfg.value.stations?.length && configStore.stations.length) {
+    cfg.value = { stations: JSON.parse(JSON.stringify(configStore.stations)) }
+    selectedIdx.value = 0
+  }
+})
+
 // ── Save ──────────────────────────────────────────────────────────────────────
 async function save() {
   saving.value = true
@@ -313,6 +324,7 @@ async function save() {
   try {
     await axios.post('/api/config/save', cfg.value)
     saveOk.value = true
+    configStore.load()  // refresh sidebar + all consumers
     setTimeout(() => { saveOk.value = false }, 4000)
   } catch (e) {
     saveError.value = e.response?.data?.error || e.message

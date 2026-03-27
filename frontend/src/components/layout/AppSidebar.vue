@@ -67,18 +67,18 @@
           <button
             class="flex items-center gap-1 text-xs px-2 py-0.5 rounded transition-colors"
             style="background:#1e3a22;color:#7ad400;border:1px solid #2a5a2e;"
-            @click="loadStations"
+            @click="configStore.load()"
           >
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
             Actualizar
           </button>
         </div>
 
-        <div v-if="stations.length === 0" class="text-xs py-2" style="color:#8aaa8a;">
+        <div v-if="configStore.stations.length === 0" class="text-xs py-2" style="color:#8aaa8a;">
           Sin estaciones configuradas
         </div>
 
-        <div v-for="st in stations" :key="st.name" class="mb-1">
+        <div v-for="st in configStore.stations" :key="st.name" class="mb-1">
           <!-- Station header row -->
           <div
             class="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all group"
@@ -140,37 +140,68 @@
                 <span class="font-mono" style="color:#c5cfc5; font-size:10px;">{{ st.id }}</span>
               </div>
               <div class="flex justify-between">
-                <span style="color:#8aaa8a;">Endian</span>
-                <span class="font-mono uppercase" style="color:#7ad400; font-size:10px;">{{ st.endian }}</span>
+                <span style="color:#8aaa8a;">Ptr endian</span>
+                <span class="font-mono uppercase" style="color:#7ad400; font-size:10px;">{{ st.ptr_endian || st.endian || '—' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span style="color:#8aaa8a;">DB endian</span>
+                <span class="font-mono uppercase" style="color:#7ad400; font-size:10px;">{{ st.db_endian || st.endian || '—' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span style="color:#8aaa8a;">Qty puntero</span>
+                <span class="font-mono" style="color:#c5cfc5; font-size:10px;">{{ st.data_registers_count ?? 2 }} reg.</span>
               </div>
             </div>
 
-            <!-- Medidores (if any) -->
-            <div v-if="st.medidores?.length" class="text-xs rounded-lg p-2" style="background:#0d160d;">
-              <div class="mb-1" style="color:#8aaa8a;">Medidores ({{ st.medidores.length }})</div>
-              <div v-for="m in st.medidores" :key="m.label"
-                   class="flex items-center justify-between py-0.5 border-b last:border-0"
-                   style="border-color:#1a2e1a;">
-                <span class="font-mono font-semibold" style="color:#7ad400; font-size:10px;">{{ m.name }}</span>
-                <div class="text-right" style="color:#8aaa8a; font-size:9px;">
-                  <div>Ptr: {{ m.pointer_address }}</div>
-                  <div>DB: {{ m.base_data_address }}</div>
+            <!-- Multi-meter: expandable per-medidor sections -->
+            <template v-if="st.medidores?.length">
+              <div class="text-xs rounded-lg p-2" style="background:#0d160d;">
+                <div class="mb-1.5" style="color:#8aaa8a;">{{ st.medidores.length }} Medidores</div>
+                <div v-for="m in st.medidores" :key="m.label" class="mb-1.5 last:mb-0">
+                  <!-- Medidor header -->
+                  <button
+                    class="w-full flex items-center justify-between py-0.5"
+                    @click="expandedMed === `${st.name}/${m.name}` ? expandedMed = null : expandedMed = `${st.name}/${m.name}`"
+                  >
+                    <span class="font-mono font-semibold" style="color:#7ad400; font-size:10px;">{{ m.name }}</span>
+                    <div class="flex items-center gap-2" style="color:#484f58; font-size:9px;">
+                      <span>Ptr {{ m.pointer_address }} · DB {{ m.base_data_address }}</span>
+                      <svg class="transition-transform shrink-0"
+                           :class="expandedMed === `${st.name}/${m.name}` ? 'rotate-90' : ''"
+                           width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#484f58" stroke-width="3">
+                        <polyline points="9 18 15 12 9 6"/>
+                      </svg>
+                    </div>
+                  </button>
+
+                  <!-- Medidor signals (expanded) -->
+                  <div v-if="expandedMed === `${st.name}/${m.name}`" class="mt-1 pl-1 space-y-0.5">
+                    <template v-if="activeSignals(m.signal_names || st.signal_names).length">
+                      <div v-for="sig in activeSignals(m.signal_names || st.signal_names)" :key="sig.i"
+                           class="flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full shrink-0" :style="`background:${SIG_COLORS[sig.i]}`" />
+                        <span style="color:#c5cfc5; font-size:9px;">{{ sig.name }}</span>
+                      </div>
+                    </template>
+                    <span v-else style="color:#484f58; font-size:9px;">Sin señales configuradas</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            </template>
 
-            <!-- Signal names (if configured) -->
-            <div v-if="st.signal_names?.length" class="text-xs rounded-lg p-2" style="background:#0d160d;">
-              <div class="mb-1" style="color:#8aaa8a;">Señales</div>
-              <div v-for="(name, i) in st.signal_names" :key="i"
-                   class="flex items-center gap-1.5 py-0.5">
-                <span class="w-1.5 h-1.5 rounded-full shrink-0"
-                  :style="`background:${SIG_COLORS[i]}`" />
-                <span style="color:#c5cfc5; font-size:10px;">{{ name }}</span>
+            <!-- Single-meter: station-level signal names -->
+            <template v-else>
+              <div v-if="activeSignals(st.signal_names).length" class="text-xs rounded-lg p-2" style="background:#0d160d;">
+                <div class="mb-1" style="color:#8aaa8a;">Señales</div>
+                <div v-for="sig in activeSignals(st.signal_names)" :key="sig.i"
+                     class="flex items-center gap-1.5 py-0.5">
+                  <span class="w-1.5 h-1.5 rounded-full shrink-0" :style="`background:${SIG_COLORS[sig.i]}`" />
+                  <span style="color:#c5cfc5; font-size:10px;">{{ sig.name }}</span>
+                </div>
               </div>
-            </div>
+            </template>
 
-            <!-- Apply button (for Query/ROC tabs) -->
+            <!-- Apply button -->
             <button
               class="w-full text-xs py-1 rounded-lg text-center transition-colors font-medium"
               style="background:#1e3a22; color:#7ad400; border:1px solid #2a5a2e;"
@@ -187,19 +218,20 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
 import { useConnectionStore } from '../../stores/connection'
 import { useRocStore } from '../../stores/roc'
 import { useSyncStore } from '../../stores/sync'
+import { useConfigStore } from '../../stores/config'
 
-const conn     = useConnectionStore()
-const rocStore = useRocStore()
-const sync     = useSyncStore()
-const router   = useRouter()
+const conn        = useConnectionStore()
+const rocStore    = useRocStore()
+const sync        = useSyncStore()
+const configStore = useConfigStore()
+const router      = useRouter()
 
-const stations       = ref([])
 const activeStation  = ref(null)
 const expandedStation = ref(null)
+const expandedMed    = ref(null)
 const showConn       = ref(true)
 
 const SIG_COLORS = [
@@ -207,16 +239,17 @@ const SIG_COLORS = [
   '#8b5cf6', '#14b8a6', '#f97316', '#007934',
 ]
 
-async function loadStations() {
-  try {
-    const { data } = await axios.get('/api/config')
-    stations.value = data.stations || []
-  } catch (_) {}
+// Returns array of { i, name } for signals with non-empty names
+function activeSignals(names) {
+  if (!names?.length) return []
+  return names
+    .map((name, i) => ({ i, name }))
+    .filter(s => s.name !== '')
 }
 
 function toggleStation(st) {
-  // Toggle expand on click
   expandedStation.value = expandedStation.value === st.name ? null : st.name
+  expandedMed.value = null
 }
 
 function applyStation(st) {
@@ -246,6 +279,4 @@ function goToTable(stName) {
     router.push('/sync')
   }
 }
-
-loadStations()
 </script>
