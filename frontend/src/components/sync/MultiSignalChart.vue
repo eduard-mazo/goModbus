@@ -237,8 +237,8 @@ const normalizedVals = computed(() =>
 // ── Chart.js config ───────────────────────────────────────────────────────────
 const chartData = computed(() => ({
   datasets: DEFAULTS.map((d, si) => ({
-    label:            signals.value[si].name,
-    hidden:           !signals.value[si].active,
+    label:            signals.value[si]?.name  ?? d.name,
+    hidden:           !signals.value[si]?.active,
     data:             normalizedVals.value[si]
                         .map((y, i) => {
                           if (y === null) return null
